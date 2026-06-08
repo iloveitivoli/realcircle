@@ -549,7 +549,7 @@ async function renderProfileBody(uid, isMe){
   const posts = data.posts.length?data.posts.map(postCard).join(''):`<div class="banner">${esc(t('empty'))}</div>`;
   const extra = isMe? `
     ${me.level<2?`<div class="card" style="cursor:pointer" onclick="go('verify')"><b>${esc(t('verifyNow'))}</b><div class="muted" style="margin-top:4px;">${esc(t('verifyNow_d'))}</div></div>`:''}
-    ${me.isAdmin?`<div class="card" style="cursor:pointer" onclick="go('search');openAdmin()"><b>${esc(t('admin'))}</b></div>`:''}
+    ${me.isAdmin?`<div class="card" style="cursor:pointer" onclick="openAdmin()"><b>${esc(t('admin'))}</b><div class="muted" style="margin-top:4px">数据看板 · 内容审核 · 用户管理</div></div>`:''}
     <div class="card"><b>${esc(t('privacy'))}</b><div class="muted" style="margin-top:4px;">${esc(t('privacy_d'))}</div></div>
     <div class="card"><b>${esc(t('hunter'))}</b><div class="muted" style="margin-top:4px;">${esc(t('hunter_d'))}</div></div>
     <div class="langsel" style="margin:12px 0">${['zh','en','ar'].map(l=>`<button class="${lang===l?'on':''}" style="background:${lang===l?'var(--gold)':'var(--green-l)'};color:${lang===l?'#16181c':'var(--green)'};border:none" onclick="setLang('${l}')">${{zh:'中文',en:'EN',ar:'عربي'}[l]}</button>`).join('')}</div>
@@ -591,13 +591,38 @@ function doSearch(q){ clearTimeout(_st); _st=setTimeout(async()=>{ if(!q.trim())
 
 /* ==================== admin ==================== */
 async function openAdmin(){
-  try{ const {queue}=await api('GET','/api/admin/reports');
-    const m=document.createElement('div'); m.className='modal'; m.onclick=e=>{if(e.target===m)m.remove();};
-    m.innerHTML=`<div class="sheet"><b>${esc(t('admin'))}</b><div style="margin-top:12px">${queue.length?queue.map(q=>`<div class="card"><div class="ptext">${esc(q.post.text)}</div><div class="muted">举报 ${q.reports} 次 · ${q.removed?'已下架':'待处理'}</div>${q.removed?`<button class="btn sm" style="margin-top:8px" onclick="restorePost('${q.post.id}',this)">恢复</button>`:''}</div>`).join(''):`<div class="banner">${esc(t('noNotif'))}</div>`}</div></div>`;
-    document.body.appendChild(m);
-  }catch(e){ toast(errMsg(e)); }
+  const m=document.createElement('div'); m.className='modal'; m.onclick=e=>{if(e.target===m)m.remove();};
+  m.innerHTML=`<div class="sheet"><div class="row"><b>${esc(t('admin'))}</b><span class="spacer"></span><button style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--gray)" onclick="this.closest('.modal').remove()">✕</button></div>
+    <div class="seg" style="margin-top:12px"><button class="on" onclick="adminTab(this,'stats')">看板</button><button onclick="adminTab(this,'review')">内容审核</button><button onclick="adminTab(this,'users')">用户</button></div>
+    <div id="adminBody"><div class="spin"></div></div></div>`;
+  document.body.appendChild(m); adminLoad('stats');
 }
-async function restorePost(id,btn){ try{ await api('POST',`/api/admin/posts/${id}/restore`); btn.closest('.modal').remove(); toast('✓'); }catch(e){ toast(errMsg(e)); } }
+function adminTab(btn,tab){ [...btn.parentNode.children].forEach(b=>b.classList.toggle('on',b===btn)); adminLoad(tab); }
+async function adminLoad(tab){
+  const body=document.getElementById('adminBody'); if(!body)return; body.innerHTML='<div class="spin"></div>';
+  try{
+    if(tab==='stats'){
+      const {stats}=await api('GET','/api/admin/stats');
+      const rows=[['注册用户',stats.users],['已活体验证',stats.verified],['当前在线',stats.online],['内容',stats.posts],['待审',stats.pending],['已下架',stats.removed],['已封禁',stats.banned],['活动',stats.events],['私信',stats.messages],['进行中故事',stats.activeStories]];
+      body.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${rows.map(([k,v])=>`<div class="card" style="margin:0;text-align:center"><div style="font-size:23px;font-weight:800;color:var(--green)">${v}</div><div class="muted">${k}</div></div>`).join('')}</div>`;
+    } else if(tab==='review'){
+      const {queue}=await api('GET','/api/admin/reports');
+      body.innerHTML=queue.length?queue.map(q=>`<div class="card">${q.post.text?`<div class="ptext">${esc(q.post.text)}</div>`:''}${q.post.media?(q.post.mediaType==='video'?`<video src="${q.post.media}" controls playsinline style="width:100%;border-radius:10px;max-height:220px;background:#000"></video>`:`<img src="${q.post.media}" style="width:100%;border-radius:10px">`):''}<div class="muted" style="margin:6px 0">作者 ${esc(q.post.author.nickname)} · 举报 ${q.reports} 次 · ${q.removed?'已下架':'待处理'}</div>${q.removed?`<button class="btn sm" onclick="adminAct('restore','${q.post.id}',this)">恢复</button>`:`<button class="btn sm" style="background:var(--red)" onclick="adminAct('remove','${q.post.id}',this)">下架</button>`}</div>`).join(''):`<div class="banner">✓ 暂无待审内容</div>`;
+    } else if(tab==='users'){
+      body.innerHTML=`<input id="adminUserQ" placeholder="搜索昵称 / 手机号" oninput="adminUserSearch(this.value)"><div id="adminUsers" style="margin-top:10px"><div class="spin"></div></div>`;
+      adminUserSearch('');
+    }
+  }catch(e){ body.innerHTML=`<div class="banner warn">${esc(errMsg(e))}</div>`; }
+}
+let _auTimer=null;
+function adminUserSearch(q){ clearTimeout(_auTimer); _auTimer=setTimeout(async()=>{
+  const box=document.getElementById('adminUsers'); if(!box)return;
+  try{ const {users}=await api('GET','/api/admin/users'+(q?'?q='+encodeURIComponent(q):''));
+    box.innerHTML=users.length?users.map(u=>`<div class="card row"><div class="col" style="flex:1;min-width:0"><div class="name">${esc(u.nickname)} ${badge(u.level)} ${u.banned?'<span class="vbadge" style="background:#fdd;color:#c00">已封禁</span>':''}</div><div class="muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.phone)} · ${u.posts}帖 · ${u.followers}粉</div></div><button class="btn sm ${u.banned?'ghost':''}" style="${u.banned?'':'background:var(--red)'};flex-shrink:0" onclick="adminBan('${u.id}',this)">${u.banned?'解封':'封禁'}</button></div>`).join(''):`<div class="banner">无匹配用户</div>`;
+  }catch(e){ box.innerHTML=`<div class="banner warn">${esc(errMsg(e))}</div>`; }
+},250); }
+async function adminAct(act,id,btn){ try{ await api('POST',`/api/admin/posts/${id}/${act}`); toast('✓'); adminLoad('review'); }catch(e){ toast(errMsg(e)); } }
+async function adminBan(id,btn){ try{ const r=await api('POST',`/api/admin/users/${id}/ban`); toast(r.banned?'已封禁':'已解封'); adminUserSearch(document.getElementById('adminUserQ')?.value||''); }catch(e){ toast(errMsg(e)); } }
 
 /* ==================== start ==================== */
 boot();

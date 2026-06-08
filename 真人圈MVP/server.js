@@ -171,7 +171,7 @@ function readBody(req) {
   });
 }
 const U = id => DB.users.find(u => u.id === id);
-function authUser(req) { const t = (req.headers.authorization || '').replace('Bearer ', ''); const uid = uidFromToken(t); return uid ? U(uid) : null; }
+function authUser(req) { const t = (req.headers.authorization || '').replace('Bearer ', ''); const uid = uidFromToken(t); const u = uid ? U(uid) : null; return (u && !u.banned) ? u : null; }
 function pubUser(u, viewer) {
   if (!u) return { id: '?', nickname: '已注销', level: 1, bio: '', meetCount: 0, followers: 0, following: 0, isFollowing: false };
   return {
@@ -224,6 +224,7 @@ const routes = {
     const dial = normDial(body.dial), phone = normPhone(body.phone), password = body.password;
     const u = findUserByPhone(dial, phone);
     if (!u || !verifyPwd(password || '', u.salt, u.hash)) return err(res, 401, '手机号或密码错误');
+    if (u.banned) return err(res, 403, '该账号已被封禁');
     json(res, 200, { token: newToken(u.id), user: pubUser(u), levelName: LEVEL_NAMES[u.level] });
   },
   'POST /api/logout': async (req, res) => {
@@ -473,19 +474,57 @@ const routes = {
     json(res, 200, { message: '报名成功,到场互扫即得「面验」进度', seats: `${e.members.length}/${e.cap}` });
   },
 
-  /* ---- 管理员:审核队列 ---- */
+  /* ---- 管理员:审核后台 ---- */
+  'GET /api/admin/stats': async (req, res) => {
+    const u = adminOf(req); if (!u) return err(res, 403, '需要管理员权限');
+    const now = Date.now();
+    json(res, 200, { stats: {
+      users: DB.users.length,
+      banned: DB.users.filter(x => x.banned).length,
+      verified: DB.users.filter(x => x.level >= 2).length,
+      posts: DB.posts.filter(p => !p.removed).length,
+      removed: DB.posts.filter(p => p.removed).length,
+      pending: DB.posts.filter(p => p.reports.length > 0 && !p.removed).length,
+      events: DB.events.length,
+      online: hub ? hub.count : 0,
+      messages: DB.messages.length,
+      activeStories: DB.posts.filter(p => p.story && !p.removed && p.expire > now).length,
+    } });
+  },
   'GET /api/admin/reports': async (req, res) => {
-    const u = authUser(req); if (!u || u.phone !== CFG.ADMIN_PHONE) return err(res, 403, '需要管理员权限');
-    const pending = DB.posts.filter(p => p.reports.length > 0).map(p => ({
+    const u = adminOf(req); if (!u) return err(res, 403, '需要管理员权限');
+    const pending = DB.posts.filter(p => p.reports.length > 0).sort((a, b) => b.reports.length - a.reports.length).map(p => ({
       post: serializePost(p, u), reports: p.reports.length, removed: p.removed }));
     json(res, 200, { queue: pending });
   },
   'POST /api/admin/posts/:id/restore': async (req, res, _q, params) => {
-    const u = authUser(req); if (!u || u.phone !== CFG.ADMIN_PHONE) return err(res, 403, '需要管理员权限');
+    const u = adminOf(req); if (!u) return err(res, 403, '需要管理员权限');
     const p = DB.posts.find(x => x.id === params.id); if (!p) return err(res, 404, '内容不存在');
     p.removed = false; p.reports = []; store.save(); json(res, 200, { ok: true });
   },
+  'POST /api/admin/posts/:id/remove': async (req, res, _q, params) => {
+    const u = adminOf(req); if (!u) return err(res, 403, '需要管理员权限');
+    const p = DB.posts.find(x => x.id === params.id); if (!p) return err(res, 404, '内容不存在');
+    p.removed = true; store.save(); json(res, 200, { ok: true });
+  },
+  'GET /api/admin/users': async (req, res, q) => {
+    const u = adminOf(req); if (!u) return err(res, 403, '需要管理员权限');
+    const kw = (q.get('q') || '').trim();
+    let list = DB.users;
+    if (kw) list = list.filter(x => x.nickname.includes(kw) || (x.phone || '').includes(kw));
+    json(res, 200, { users: list.slice(0, 100).map(x => ({
+      ...pubUser(x, u), phone: '+' + normDial(x.dial) + ' ' + x.phone, banned: !!x.banned,
+      posts: DB.posts.filter(p => p.uid === x.id && !p.removed).length })) });
+  },
+  'POST /api/admin/users/:id/ban': async (req, res, _q, params) => {
+    const u = adminOf(req); if (!u) return err(res, 403, '需要管理员权限');
+    const target = U(params.id); if (!target) return err(res, 404, '用户不存在');
+    if (target.phone === CFG.ADMIN_PHONE) return err(res, 400, '不能封禁管理员');
+    target.banned = !target.banned; store.save();
+    json(res, 200, { banned: !!target.banned });
+  },
 };
+function adminOf(req) { const u = authUser(req); return (u && u.phone === CFG.ADMIN_PHONE) ? u : null; }
 
 function serializePost(p, viewer) {
   return {
