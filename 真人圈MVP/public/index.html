@@ -139,7 +139,8 @@ const I18N = {
     save:'保存', cancel:'取消', verifyNow:'🛡️ 完成活体验证 →', verifyNow_d:'解锁发帖、聊天、报名活动',
     aiblocked:'检测到 AI 生成内容,已拒绝发布', loading:'加载中…', empty:'还没有内容', justnow:'刚刚',
     mago:' 分钟前', hago:' 小时前', dago:' 天前', meetc:' 次', admin:'🛡️ 审核后台',
-    storyAdd:'发故事', mystory:'我的', congrats:'恭喜!你现在是 L2 认证真人', welcome:'欢迎回来,' },
+    storyAdd:'发故事', mystory:'我的', congrats:'恭喜!你现在是 L2 认证真人', welcome:'欢迎回来,',
+    addMedia:'图片/视频', uploading:'上传中', removeMedia:'移除', noVideoYet:'还没有真人视频,去发一条直拍吧', tapUnmute:'点击取消静音' },
   en: { dir:'ltr', appsub:'No AI girls. No bots. Only real humans.',
     login:'Log in', register:'Sign up', phone:'Phone number', pwd:'Password (min 6)', nick:'Nickname',
     have:'Have an account? Log in', toReg:'Sign up (next: liveness check)',
@@ -162,7 +163,8 @@ const I18N = {
     save:'Save', cancel:'Cancel', verifyNow:'🛡️ Complete liveness →', verifyNow_d:'Unlock posting, chat, meetups',
     aiblocked:'AI-generated content detected, post rejected', loading:'Loading…', empty:'Nothing here yet', justnow:'just now',
     mago:'m ago', hago:'h ago', dago:'d ago', meetc:' times', admin:'🛡️ Moderation',
-    storyAdd:'Add story', mystory:'You', congrats:'You are now an L2 verified human!', welcome:'Welcome back, ' },
+    storyAdd:'Add story', mystory:'You', congrats:'You are now an L2 verified human!', welcome:'Welcome back, ',
+    addMedia:'Photo/Video', uploading:'Uploading', removeMedia:'Remove', noVideoYet:'No real videos yet — post your first', tapUnmute:'Tap to unmute' },
   ar: { dir:'rtl', appsub:'لا فتيات ذكاء اصطناعي. لا روبوتات. بشر حقيقيون فقط.',
     login:'تسجيل الدخول', register:'إنشاء حساب', phone:'رقم الجوال', pwd:'كلمة المرور (6 على الأقل)', nick:'الاسم',
     have:'لديك حساب؟ سجّل الدخول', toReg:'إنشاء حساب (التالي: فحص الحيوية)',
@@ -185,7 +187,8 @@ const I18N = {
     save:'حفظ', cancel:'إلغاء', verifyNow:'🛡️ أكمل فحص الحيوية ←', verifyNow_d:'افتح النشر والدردشة واللقاءات',
     aiblocked:'تم اكتشاف محتوى ذكاء اصطناعي، رُفض النشر', loading:'جارٍ التحميل…', empty:'لا شيء هنا بعد', justnow:'الآن',
     mago:' د', hago:' س', dago:' ي', meetc:' مرات', admin:'🛡️ الإشراف',
-    storyAdd:'قصة', mystory:'أنت', congrats:'أنت الآن إنسان موثّق L2!', welcome:'مرحباً بعودتك، ' },
+    storyAdd:'قصة', mystory:'أنت', congrats:'أنت الآن إنسان موثّق L2!', welcome:'مرحباً بعودتك، ',
+    addMedia:'صورة/فيديو', uploading:'جارٍ الرفع', removeMedia:'إزالة', noVideoYet:'لا فيديوهات بعد — انشر أول مقطع', tapUnmute:'اضغط لتشغيل الصوت' },
 };
 let lang = localStorage.getItem('lang') || 'zh';
 function t(k){ return (I18N[lang] && I18N[lang][k]) || I18N.zh[k] || k; }
@@ -350,7 +353,10 @@ async function renderFeed(){
     <div id="stories"></div>
     ${me.level>=2?`<div class="card">
       <textarea id="ptext" rows="2" placeholder="${esc(t('placeholder_post'))}"></textarea>
+      <div id="pmedia"></div>
+      <input type="file" id="pfile" accept="image/*,video/*" style="display:none" onchange="pickMedia(this)">
       <div class="row" style="margin-top:6px;">
+        <button class="tbtn" title="${esc(t('addMedia'))}" onclick="document.getElementById('pfile').click()" style="font-size:19px;padding:4px 8px;">📷</button>
         <label class="muted"><input type="checkbox" id="pdirect" checked style="width:auto;margin-inline-end:5px;">${esc(t('direct'))}</label>
         <span class="spacer"></span>
         <button class="btn sm" onclick="doPost(false)">${esc(t('publish'))}</button>
@@ -381,7 +387,10 @@ function postCard(p){
     <div class="row"><div onclick="go('profile','${p.author.id}')" style="cursor:pointer">${ava(p.author)}</div>
       <div class="col" onclick="go('profile','${p.author.id}')" style="cursor:pointer"><div class="name">${esc(p.author.nickname)} ${badge(p.author.level)}</div><div class="muted">${ago(p.ts)}${p.kind==='video'?' · 🎬':''}</div></div>
       <span class="spacer"></span>${p.mine?`<button class="tbtn" onclick="delPost('${p.id}')">🗑️</button>`:''}</div>
-    <div class="ptext">${esc(p.text)}</div>
+    ${p.text?`<div class="ptext">${esc(p.text)}</div>`:''}
+    ${p.media?(p.mediaType==='video'
+      ? `<video src="${p.media}" controls playsinline preload="metadata" style="width:100%;border-radius:12px;background:#000;margin-bottom:8px;max-height:440px"></video>`
+      : `<img src="${p.media}" loading="lazy" onclick="window.open('${p.media}')" style="width:100%;border-radius:12px;margin-bottom:8px;cursor:pointer">`):''}
     ${p.direct?`<div style="margin-bottom:8px;"><span class="cam">📷 App 直拍 · 已签名</span></div>`:''}
     <div class="acts">
       <button class="${p.liked?'liked':''}" onclick="like('${p.id}',this)">${p.liked?'❤️':'🤍'} <i style="font-style:normal">${p.likes}</i></button>
@@ -390,11 +399,32 @@ function postCard(p){
       <button onclick="report('${p.id}')">⚠ ${esc(t('reportAI'))}</button>
     </div></div>`;
 }
+let pendingMedia=null; // {url,type} 发帖待附带的已上传媒体
+async function pickMedia(input){
+  const f=input.files&&input.files[0]; if(!f){return;}
+  const isVideo=(f.type||'').startsWith('video/');
+  const maxMB=isVideo?25:6;
+  if(f.size>maxMB*1024*1024){ toast(isVideo?'视频不能超过 25MB':'图片不能超过 6MB'); input.value=''; return; }
+  const box=$('#pmedia'); if(box) box.innerHTML=`<div class="muted" style="padding:8px 0">⏳ ${esc(t('uploading'))}</div>`;
+  try{
+    const r=await fetch('/api/upload',{method:'PUT',headers:{'Content-Type':f.type,'Authorization':'Bearer '+token},body:f});
+    const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'上传失败'),{code:d.error});
+    pendingMedia={url:d.url,type:d.type};
+    if(box) box.innerHTML=(d.type==='video'
+        ? `<video src="${d.url}" controls playsinline style="width:100%;border-radius:12px;background:#000;max-height:300px"></video>`
+        : `<img src="${d.url}" style="width:100%;border-radius:12px;display:block">`)
+      + `<button class="muted" onclick="clearMedia()" style="background:none;border:none;cursor:pointer;padding:6px 0">✕ ${esc(t('removeMedia'))}</button>`;
+  }catch(e){ toast(errMsg(e)); if(box) box.innerHTML=''; }
+  input.value='';
+}
+function clearMedia(){ pendingMedia=null; const b=$('#pmedia'); if(b) b.innerHTML=''; }
 async function doPost(story, storyText){
   const text = story? storyText : $('#ptext').value;
   const direct = story? true : $('#pdirect').checked;
-  try{ await api('POST','/api/posts',{text,direct,story:!!story,kind:'text'});
-    toast('✓'); if(!story)$('#ptext').value=''; renderFeed(); }
+  const body={text,direct,story:!!story,kind:'text'};
+  if(!story && pendingMedia){ body.media=pendingMedia.url; body.mediaType=pendingMedia.type; }
+  try{ await api('POST','/api/posts',body);
+    toast('✓'); if(!story){$('#ptext').value=''; clearMedia();} renderFeed(); }
   catch(e){ toast(errMsg(e)); }
 }
 async function like(id,btn){ try{ const r=await api('POST',`/api/posts/${id}/like`); btn.classList.toggle('liked',r.liked); btn.firstChild.textContent=(r.liked?'❤️':'🤍')+' '; btn.querySelector('i').textContent=r.likes; }catch(e){ toast(errMsg(e)); } }
@@ -419,22 +449,33 @@ async function addComment(pid){ const inp=$('#ctext'); if(!inp.value.trim())retu
 async function renderVideo(){
   $('#view').innerHTML = shell(`<div id="vfeed" class="videofeed"><div class="spin"></div></div>`);
   try{ const {posts}=await api('GET','/api/posts?kind=video'); const el=$('#vfeed'); if(!el)return;
-    el.innerHTML = posts.length?posts.map((p,i)=>`
-      <div class="vcard" style="background:linear-gradient(160deg,${avaColor(p.author.nickname)},#0e1420);">
-        <div class="vbg">${['🎸','🏔️','🌊','🎨','🍜','⛺'][i%6]}</div>
+    const real = posts.filter(p=>p.media && p.mediaType==='video'); // 只展示真实直拍视频
+    if(!real.length){ el.innerHTML=`<div class="center">🎬<div style="margin-top:10px">${esc(t('noVideoYet'))}</div></div>`; return; }
+    el.innerHTML = real.map(p=>`
+      <div class="vcard">
+        <video src="${p.media}" loop muted playsinline preload="metadata" onclick="toggleVid(this)"
+          style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:1"></video>
         <div class="vside" style="${I18N[lang].dir==='rtl'?'left:12px':'right:12px'}">
           <div onclick="go('profile','${p.author.id}')">${ava(p.author,44)}</div>
           <button class="${p.liked?'liked':''}" onclick="like('${p.id}',this)">${p.liked?'❤️':'🤍'}<br><span style="font-size:11px">${p.likes}</span></button>
           <button onclick="openComments('${p.id}')">💬<br><span style="font-size:11px">${p.comments}</span></button>
           <button onclick="report('${p.id}')">⚠️<br><span style="font-size:10px">${esc(t('reportAI'))}</span></button>
         </div>
-        <div style="position:relative;z-index:2;">
+        <div style="position:relative;z-index:2;text-shadow:0 1px 4px rgba(0,0,0,.6);">
           <div style="font-weight:800;">@${esc(p.author.nickname)} ${badge(p.author.level)}</div>
-          <div style="font-size:13px;margin-top:6px;line-height:1.5;opacity:.95">${esc(p.text)}</div>
-          <div style="font-size:10.5px;margin-top:6px;opacity:.6">🛡️ 直拍签名 · 未检测到 AI 痕迹</div>
-        </div></div>`).join(''):`<div class="center">${esc(t('empty'))}</div>`;
+          ${p.text?`<div style="font-size:13px;margin-top:6px;line-height:1.5;opacity:.95">${esc(p.text)}</div>`:''}
+          <div style="font-size:10.5px;margin-top:6px;opacity:.75">🛡️ 直拍签名 · 🔇 ${esc(t('tapUnmute'))}</div>
+        </div></div>`).join('');
+    // 滚动到视口内的视频自动播放,离开暂停(抖音式)
+    const vids = el.querySelectorAll('video');
+    if(window._vio) window._vio.disconnect();
+    window._vio = new IntersectionObserver(ents=>ents.forEach(en=>{
+      if(en.isIntersecting) en.target.play().catch(()=>{}); else en.target.pause();
+    }), {threshold:0.6});
+    vids.forEach(v=>window._vio.observe(v));
   }catch(e){ $('#vfeed').innerHTML=`<div class="banner warn">${esc(errMsg(e))}</div>`; }
 }
+function toggleVid(v){ v.muted=!v.muted; if(v.paused) v.play().catch(()=>{}); toast(v.muted?'🔇':'🔊'); }
 
 /* ==================== events ==================== */
 async function renderEvents(){

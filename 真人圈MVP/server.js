@@ -135,16 +135,17 @@ function seed() {
   const b = mk('13800000002', '阿瓜的木工房', 3, '手作木工,拒绝AI画图');
   const c = mk('13800000003', '茉茉', 4, '即兴戏剧爱好者');
   const d = mk('13800000004', '老周', 3, '徒步/黑胶/纪录片');
-  const post = (u, text, kind, ago, story) => DB.posts.push({
+  const post = (u, text, kind, ago, story, media) => DB.posts.push({
     id: store.nid(), uid: u.id, text, kind: kind || 'text', direct: true,
+    media: media || null, mediaType: media ? (kind === 'video' ? 'video' : 'image') : null,
     likes: [], reports: [], removed: false, story: !!story,
     ts: Date.now() - ago, expire: story ? Date.now() + CFG.STORY_TTL_MS : 0,
   });
   post(a, '骑行第23天,翻过最后一个垭口。手冻僵了,照片是抖的,但每一帧都是我亲眼看到的。', 'text', 7200e3);
   post(b, '这把椅子做了三周,手上添了两个新茧。AI能画一万把椅子,但坐不上去。', 'text', 18000e3);
   post(c, '第一次参加平台的陌生人饭局,6个人聊到店家打烊。', 'text', 86400e3);
-  post(a, '随手拍的日出,没开滤镜。', 'video', 3600e3);
-  post(c, '练琴第100天,弹错了三个和弦,一刀未剪。', 'video', 5400e3);
+  post(a, '随手拍的日出,没开滤镜。【平台示例短片 · 可拖动播放】', 'video', 3600e3, false, '/demo/v1.mp4');
+  post(c, '练琴第100天,弹错了三个和弦,一刀未剪。【平台示例短片】', 'video', 5400e3, false, '/demo/v2.mp4');
   post(a, '此刻的拉萨夜空 🌌', 'text', 1800e3, true);  // 故事
   post(d, '出发前的咖啡 ☕', 'text', 3000e3, true);     // 故事
   DB.events.push(
@@ -284,15 +285,45 @@ const routes = {
     const u = authUser(req); if (!u) return err(res, 401, '请先登录');
     if (u.level < 2) return err(res, 403, '发布内容需要 L2 活体验证');
     if (!rateLimit('post:' + u.id, true)) return err(res, 429, '发布过于频繁,请稍后');
-    const { text, kind, direct, story } = await readBody(req);
-    if (!text || !text.trim()) return err(res, 400, '内容不能为空');
-    if (text.length > 2000) return err(res, 400, '内容过长');
-    if (detectAIText(text)) return err(res, 422, 'AI_BLOCKED'); // 命中AI检测,拒绝
-    const p = { id: store.nid(), uid: u.id, text: text.trim(), kind: ['text', 'video'].includes(kind) ? kind : 'text',
+    const { text, kind, direct, story, media, mediaType } = await readBody(req);
+    // 媒体只接受本平台上传返回的 /uploads/ 路径(防注入外链)
+    const mediaUrl = (typeof media === 'string' && /^\/uploads\/[\w.-]+$/.test(media)) ? media : null;
+    const mType = mediaUrl ? (['video', 'image'].includes(mediaType) ? mediaType : 'image') : null;
+    const txt = (text || '').trim();
+    if (!txt && !mediaUrl) return err(res, 400, '内容不能为空');     // 纯媒体帖允许无文字
+    if (txt.length > 2000) return err(res, 400, '内容过长');
+    if (txt && detectAIText(txt)) return err(res, 422, 'AI_BLOCKED'); // 命中AI检测,拒绝
+    const realKind = mType === 'video' ? 'video' : (['text', 'video'].includes(kind) ? kind : 'text');
+    const p = { id: store.nid(), uid: u.id, text: txt, kind: realKind,
+      media: mediaUrl, mediaType: mType,
       direct: direct !== false, likes: [], reports: [], removed: false, story: !!story,
       ts: Date.now(), expire: story ? Date.now() + CFG.STORY_TTL_MS : 0 };
     DB.posts.push(p); store.save();
     json(res, 200, { id: p.id, post: serializePost(p, u) });
+  },
+  /* ---- 媒体上传(流式,零依赖;真实视频/图片,原始二进制 body) ---- */
+  'PUT /api/upload': async (req, res) => {
+    const u = authUser(req); if (!u) return err(res, 401, '请先登录');
+    if (u.level < 2) return err(res, 403, '上传需要 L2 活体验证');
+    if (!rateLimit('upload:' + u.id, true)) return err(res, 429, '上传过于频繁,请稍后');
+    const ct = (req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    const EXT = { 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
+    const kind = ct.startsWith('video/') ? 'video' : ct.startsWith('image/') ? 'image' : null;
+    if (!kind || !EXT[ct]) return err(res, 415, '仅支持 mp4/webm/mov 视频或 jpg/png/webp/gif 图片');
+    const max = kind === 'video' ? 25 * 1024 * 1024 : 6 * 1024 * 1024;
+    const dir = path.join(CFG.PUBLIC_DIR, 'uploads');
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+    const name = store.nid() + '_' + crypto.randomBytes(4).toString('hex') + '.' + EXT[ct];
+    const fp = path.join(dir, name);
+    const stream = fs.createWriteStream(fp);
+    let size = 0, aborted = false;
+    const fail = (code, key) => { aborted = true; try { req.destroy(); } catch {} try { stream.destroy(); } catch {} fs.unlink(fp, () => {}); if (!res.headersSent) err(res, code, key); };
+    req.on('data', c => { size += c.length; if (size > max && !aborted) fail(413, kind === 'video' ? '视频不能超过 25MB' : '图片不能超过 6MB'); });
+    req.pipe(stream);
+    await new Promise(resolve => { stream.on('finish', resolve); stream.on('error', resolve); req.on('error', resolve); });
+    if (aborted) return;
+    if (size === 0) { fs.unlink(fp, () => {}); return err(res, 400, '空文件'); }
+    json(res, 200, { url: '/uploads/' + name, type: kind });
   },
   'POST /api/posts/:id/like': async (req, res, _q, params) => {
     const u = authUser(req); if (!u) return err(res, 401, '请先登录');
@@ -459,6 +490,7 @@ const routes = {
 function serializePost(p, viewer) {
   return {
     id: p.id, text: p.text, kind: p.kind, direct: p.direct, story: p.story, ts: p.ts,
+    media: p.media || null, mediaType: p.mediaType || null,
     likes: p.likes.length, liked: viewer ? p.likes.includes(viewer.id) : false,
     comments: DB.comments.filter(c => c.pid === p.id && !c.removed).length,
     author: pubUser(U(p.uid), viewer), mine: viewer ? p.uid === viewer.id : false,
@@ -466,7 +498,8 @@ function serializePost(p, viewer) {
 }
 
 /* ============================ HTTP 入口 ============================ */
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
 const WRITE_METHODS = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);
 
 const server = http.createServer(async (req, res) => {
@@ -508,16 +541,30 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 静态资源(SPA fallback 到 index.html)
+  // 静态资源(SPA fallback 到 index.html;视频/图片支持 Range 与流式)
   if (req.method === 'GET') {
     let rel = url.pathname === '/' ? '/index.html' : url.pathname;
     let fp = path.join(CFG.PUBLIC_DIR, path.normalize(rel));
     if (!fp.startsWith(CFG.PUBLIC_DIR)) return err(res, 403, 'forbidden');
-    if (!fs.existsSync(fp) || !fs.statSync(fp).isFile()) fp = path.join(CFG.PUBLIC_DIR, 'index.html');
-    if (fs.existsSync(fp)) {
-      const ext = path.extname(fp);
-      res.writeHead(200, { 'Content-Type': (MIME[ext] || 'application/octet-stream') + (ext === '.html' || ext === '.js' || ext === '.css' ? '; charset=utf-8' : '') });
-      return res.end(fs.readFileSync(fp));
+    let isFile = fs.existsSync(fp) && fs.statSync(fp).isFile();
+    if (!isFile) { fp = path.join(CFG.PUBLIC_DIR, 'index.html'); isFile = fs.existsSync(fp); }
+    if (isFile) {
+      const ext = path.extname(fp).toLowerCase();
+      const mime = (MIME[ext] || 'application/octet-stream') + (ext === '.html' || ext === '.js' || ext === '.css' ? '; charset=utf-8' : '');
+      const stat = fs.statSync(fp);
+      if (fp.startsWith(path.join(CFG.PUBLIC_DIR, 'uploads'))) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      const range = req.headers.range;
+      if (range && /^bytes=\d*-\d*$/.test(range)) { // 视频拖动:返回 206 局部
+        let [s, e] = range.replace('bytes=', '').split('-');
+        let start = parseInt(s, 10), end = e ? parseInt(e, 10) : stat.size - 1;
+        if (isNaN(start)) start = 0;
+        if (isNaN(end) || end >= stat.size) end = stat.size - 1;
+        if (start > end || start >= stat.size) { res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` }); return res.end(); }
+        res.writeHead(206, { 'Content-Type': mime, 'Content-Range': `bytes ${start}-${end}/${stat.size}`, 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1 });
+        return fs.createReadStream(fp, { start, end }).pipe(res);
+      }
+      res.writeHead(200, { 'Content-Type': mime, 'Content-Length': stat.size, 'Accept-Ranges': 'bytes' });
+      return fs.createReadStream(fp).pipe(res);
     }
   }
   err(res, 404, 'not found');
