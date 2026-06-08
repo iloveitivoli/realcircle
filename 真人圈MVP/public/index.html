@@ -140,7 +140,8 @@ const I18N = {
     aiblocked:'检测到 AI 生成内容,已拒绝发布', loading:'加载中…', empty:'还没有内容', justnow:'刚刚',
     mago:' 分钟前', hago:' 小时前', dago:' 天前', meetc:' 次', admin:'🛡️ 审核后台',
     storyAdd:'发故事', mystory:'我的', congrats:'恭喜!你现在是 L2 认证真人', welcome:'欢迎回来,',
-    addMedia:'图片/视频', uploading:'上传中', removeMedia:'移除', noVideoYet:'还没有真人视频,去发一条直拍吧', tapUnmute:'点击取消静音' },
+    addMedia:'图片/视频', uploading:'上传中', removeMedia:'移除', noVideoYet:'还没有真人视频,去发一条直拍吧', tapUnmute:'点击取消静音',
+    getCode:'获取验证码', codeSent:'验证码已发送', codePlaceholder:'短信验证码' },
   en: { dir:'ltr', appsub:'No AI girls. No bots. Only real humans.',
     login:'Log in', register:'Sign up', phone:'Phone number', pwd:'Password (min 6)', nick:'Nickname',
     have:'Have an account? Log in', toReg:'Sign up (next: liveness check)',
@@ -164,7 +165,8 @@ const I18N = {
     aiblocked:'AI-generated content detected, post rejected', loading:'Loading…', empty:'Nothing here yet', justnow:'just now',
     mago:'m ago', hago:'h ago', dago:'d ago', meetc:' times', admin:'🛡️ Moderation',
     storyAdd:'Add story', mystory:'You', congrats:'You are now an L2 verified human!', welcome:'Welcome back, ',
-    addMedia:'Photo/Video', uploading:'Uploading', removeMedia:'Remove', noVideoYet:'No real videos yet — post your first', tapUnmute:'Tap to unmute' },
+    addMedia:'Photo/Video', uploading:'Uploading', removeMedia:'Remove', noVideoYet:'No real videos yet — post your first', tapUnmute:'Tap to unmute',
+    getCode:'Get code', codeSent:'Code sent', codePlaceholder:'SMS code' },
   ar: { dir:'rtl', appsub:'لا فتيات ذكاء اصطناعي. لا روبوتات. بشر حقيقيون فقط.',
     login:'تسجيل الدخول', register:'إنشاء حساب', phone:'رقم الجوال', pwd:'كلمة المرور (6 على الأقل)', nick:'الاسم',
     have:'لديك حساب؟ سجّل الدخول', toReg:'إنشاء حساب (التالي: فحص الحيوية)',
@@ -188,7 +190,8 @@ const I18N = {
     aiblocked:'تم اكتشاف محتوى ذكاء اصطناعي، رُفض النشر', loading:'جارٍ التحميل…', empty:'لا شيء هنا بعد', justnow:'الآن',
     mago:' د', hago:' س', dago:' ي', meetc:' مرات', admin:'🛡️ الإشراف',
     storyAdd:'قصة', mystory:'أنت', congrats:'أنت الآن إنسان موثّق L2!', welcome:'مرحباً بعودتك، ',
-    addMedia:'صورة/فيديو', uploading:'جارٍ الرفع', removeMedia:'إزالة', noVideoYet:'لا فيديوهات بعد — انشر أول مقطع', tapUnmute:'اضغط لتشغيل الصوت' },
+    addMedia:'صورة/فيديو', uploading:'جارٍ الرفع', removeMedia:'إزالة', noVideoYet:'لا فيديوهات بعد — انشر أول مقطع', tapUnmute:'اضغط لتشغيل الصوت',
+    getCode:'إرسال الرمز', codeSent:'تم إرسال الرمز', codePlaceholder:'رمز التحقق' },
 };
 let lang = localStorage.getItem('lang') || 'zh';
 function t(k){ return (I18N[lang] && I18N[lang][k]) || I18N.zh[k] || k; }
@@ -300,6 +303,10 @@ function renderAuth(){
       </div>
       <input id="pwd" type="password" placeholder="${esc(t('pwd'))}">
       <input id="nick" placeholder="${esc(t('nick'))}">
+      <div class="row" style="gap:8px;margin-bottom:11px;">
+        <input id="code" inputmode="numeric" maxlength="6" placeholder="${esc(t('codePlaceholder'))}" style="flex:1;margin:0;">
+        <button class="btn sm" id="codeBtn" onclick="sendCode()" style="flex-shrink:0;white-space:nowrap;">${esc(t('getCode'))}</button>
+      </div>
       <button class="btn" onclick="doRegister()">${esc(t('toReg'))}</button>
       <div style="height:8px"></div>
       <button class="btn ghost" onclick="doLogin()">${esc(t('have'))}</button>
@@ -307,9 +314,22 @@ function renderAuth(){
     </div></div>`;
 }
 function setLang(l){ lang=l; localStorage.setItem('lang',l); applyDir(); token?render():renderAuth(); }
+let _codeTimer=null;
+async function sendCode(){
+  const dial=$('#dial').value, phone=$('#phone').value, btn=$('#codeBtn');
+  if(!phone){ toast(t('phone')); return; }
+  try{
+    const r=await api('POST','/api/sms/send',{dial,phone});
+    if(r.devCode){ const c=$('#code'); if(c) c.value=r.devCode; toast('演示验证码已自动填入:'+r.devCode); }
+    else toast(t('codeSent'));
+    let n=60; btn.disabled=true; btn.textContent=n+'s';
+    clearInterval(_codeTimer);
+    _codeTimer=setInterval(()=>{ n--; if(n<=0){ clearInterval(_codeTimer); btn.disabled=false; btn.textContent=t('getCode'); } else btn.textContent=n+'s'; },1000);
+  }catch(e){ toast(errMsg(e)); }
+}
 async function doRegister(){
   const dial=$('#dial').value; localStorage.setItem('dial',dial);
-  try{ const r=await api('POST','/api/register',{dial,phone:$('#phone').value,password:$('#pwd').value,nickname:$('#nick').value});
+  try{ const r=await api('POST','/api/register',{dial,phone:$('#phone').value,password:$('#pwd').value,nickname:$('#nick').value,code:$('#code').value});
     token=r.token; me=r.user; localStorage.setItem('token',token); connectWS(); go('verify'); }
   catch(e){ toast(errMsg(e)); }
 }

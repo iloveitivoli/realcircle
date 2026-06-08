@@ -20,6 +20,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { createPersistence, emptyDB, normalize } = require('./storage');
 const { createLiveness, LivenessError } = require('./liveness');
+const { createSms, SmsError, genCode } = require('./sms');
 const wsHub = require('./ws');
 
 /* ============================ 配置 ============================ */
@@ -41,6 +42,14 @@ const CFG = {
   PG_SSL: process.env.PG_SSL || 'false',
   // 活体验证 provider:mock(默认)| facetec | iproov
   LIVENESS_PROVIDER: process.env.LIVENESS_PROVIDER || 'mock',
+  // 短信验证码:mock(默认)| aliyun | twilio;SMS_REQUIRED=true 时注册强制验证码
+  SMS_PROVIDER: process.env.SMS_PROVIDER || 'mock',
+  SMS_REQUIRED: process.env.SMS_REQUIRED === 'true',
+  ALIYUN_SMS_KEY: process.env.ALIYUN_SMS_KEY || '',
+  ALIYUN_SMS_SECRET: process.env.ALIYUN_SMS_SECRET || '',
+  TWILIO_SID: process.env.TWILIO_SID || '',
+  TWILIO_TOKEN: process.env.TWILIO_TOKEN || '',
+  TWILIO_FROM: process.env.TWILIO_FROM || '',
 };
 
 /* ============================ 存储层 ============================ */
@@ -68,6 +77,11 @@ const store = {
 
 /* ============================ 活体验证 provider ============================ */
 const liveness = createLiveness(CFG);
+
+/* ============================ 短信验证码 ============================ */
+const sms = createSms(CFG);
+const smsCodes = new Map(); // 'dial:phone' -> { code, exp, tries, lastSent }(内存,无需持久化)
+setInterval(() => { const now = Date.now(); for (const [k, v] of smsCodes) if (v.exp < now) smsCodes.delete(k); }, 5 * 60000).unref?.();
 
 /* ============================ 实时推送 Hub(WebSocket) ============================ */
 let hub = null; // 在 server 创建后 attach;notify()/私信路由按需推送(离线则降级为轮询)
@@ -205,6 +219,23 @@ const routes = {
   /* ---- 健康检查(部署探活) ---- */
   'GET /api/health': async (_q, res) => json(res, 200, { ok: true, env: CFG.NODE_ENV, users: DB.users.length, ts: Date.now() }),
 
+  /* ---- 短信验证码 ---- */
+  'POST /api/sms/send': async (req, res) => {
+    const body = await readBody(req);
+    const dial = normDial(body.dial), phone = normPhone(body.phone);
+    if (!validPhone(dial, phone)) return err(res, 400, '手机号格式不正确');
+    if (findUserByPhone(dial, phone)) return err(res, 409, '该手机号已注册');
+    const key = dial + ':' + phone;
+    const ex = smsCodes.get(key);
+    if (ex && Date.now() - ex.lastSent < 60000) return err(res, 429, '请 60 秒后再获取');
+    const code = genCode();
+    let extra;
+    try { extra = await sms.send(dial, phone, code) || {}; }
+    catch (e) { if (e instanceof SmsError) return err(res, e.status, e.code); if (CFG.NODE_ENV !== 'production') console.error(e); return err(res, 502, '短信服务异常'); }
+    smsCodes.set(key, { code, exp: Date.now() + 5 * 60000, tries: 0, lastSent: Date.now() });
+    json(res, 200, { sent: true, devCode: extra.devCode }); // devCode 仅 mock+开发模式回显
+  },
+
   /* ---- 账号 ---- */
   'POST /api/register': async (req, res) => {
     const body = await readBody(req);
@@ -214,6 +245,13 @@ const routes = {
     if (!nickname || !nickname.trim()) return err(res, 400, '昵称不能为空');
     if (nickname.length > 20) return err(res, 400, '昵称过长');
     if (findUserByPhone(dial, phone)) return err(res, 409, '该手机号已注册(一人一号)');
+    if (CFG.SMS_REQUIRED) { // 生产强制短信验证码,挡批量注册
+      const rec = smsCodes.get(dial + ':' + phone);
+      if (!rec || rec.exp < Date.now()) return err(res, 400, '请先获取短信验证码');
+      if (rec.tries >= 5) { smsCodes.delete(dial + ':' + phone); return err(res, 429, '验证码错误次数过多,请重新获取'); }
+      if (String(body.code || '') !== rec.code) { rec.tries++; return err(res, 400, '验证码错误'); }
+      smsCodes.delete(dial + ':' + phone); // 用后即焚
+    }
     const { salt, hash } = hashPwd(password);
     const u = { id: store.nid(), phone, dial, nickname: nickname.trim(), level: 1, bio: '', salt, hash, faceHash: null, meetCount: 0, following: [], created: Date.now() };
     DB.users.push(u); store.save();
