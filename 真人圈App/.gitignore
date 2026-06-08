@@ -1,0 +1,15 @@
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+.idea/
+*.iml
+.DS_Store
+# 平台目录由 `flutter create .` 生成
+/android/
+/ios/
+/web/
+/macos/
+/linux/
+/windows/

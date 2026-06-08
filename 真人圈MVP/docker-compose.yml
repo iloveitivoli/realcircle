@@ -1,0 +1,64 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - ADMIN_PHONE=13800000001
+      # —— 存储:二选一 ——
+      # A) JSON 文件(默认,零依赖):保留下面两行,注释掉 postgres 段
+      - STORAGE=json
+      - DATA_FILE=/data/data.json
+      # B) PostgreSQL(生产推荐):注释掉上面两行,改用下面三行 + 取消 depends_on/postgres
+      # - STORAGE=postgres
+      # - DATABASE_URL=postgres://realcircle:realcircle@postgres:5432/realcircle
+      # - PG_SSL=false
+      # —— 活体验证 provider:mock(默认)| facetec | iproov ——
+      - LIVENESS_PROVIDER=mock
+      # - FACETEC_API_URL=...
+      # - FACETEC_API_KEY=...
+      # - CORS_ORIGIN=https://your-domain.com   # 收紧跨域(生产建议设置)
+    volumes:
+      - realcircle-data:/data
+    ports:
+      - "3000:3000"
+    # 用 PostgreSQL 时取消下面注释,确保先等数据库就绪
+    # depends_on:
+    #   postgres:
+    #     condition: service_healthy
+
+  # —— 可选:PostgreSQL(启用方式见 app.environment 的 B 段)——
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=realcircle
+      - POSTGRES_PASSWORD=realcircle
+      - POSTGRES_DB=realcircle
+    volumes:
+      - realcircle-pgdata:/var/lib/postgresql/data
+    # 仅本机调试时映射端口;生产无需对外暴露
+    # ports:
+    #   - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U realcircle -d realcircle"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # 可选:Nginx 反向代理 + HTTPS 终止(证书自行挂载)
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # - ./deploy/certs:/etc/nginx/certs:ro
+
+volumes:
+  realcircle-data:
+  realcircle-pgdata:

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "realcircle",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "PORT=3030 DATA_FILE=/tmp/rc-preview.json node server.js"],
+      "port": 3030
+    }
+  ]
+}

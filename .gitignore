@@ -1,0 +1,27 @@
+# 依赖
+node_modules/
+真人圈App/.dart_tool/
+真人圈App/build/
+真人圈App/.flutter-plugins
+真人圈App/.flutter-plugins-dependencies
+真人圈App/android/
+真人圈App/ios/
+真人圈App/linux/
+真人圈App/macos/
+真人圈App/windows/
+真人圈App/web/
+
+# 运行时数据
+真人圈MVP/data.json
+真人圈MVP/*.tmp
+真人圈MVP/.test-data.json
+真人圈MVP/public/uploads/
+
+# 环境与密钥
+.env
+*.env
+deploy/*.secret
+
+# 系统
+.DS_Store
+*.log

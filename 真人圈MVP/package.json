@@ -1,0 +1,21 @@
+{
+  "name": "realcircle",
+  "version": "1.1.0",
+  "description": "真人圈 RealCircle — 100% 真人社交平台后端(零依赖可运行;可选 PostgreSQL)",
+  "private": true,
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js",
+    "test:storage": "node storage.test.js"
+  },
+  "optionalDependencies": {
+    "pg": "^8.11.0"
+  },
+  "devDependencies": {
+    "pg-mem": "^3.0.0"
+  }
+}

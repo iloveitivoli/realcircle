@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0B6E4F">
+<title>真人圈 RealCircle</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<style>
+  :root{
+    --green:#0B6E4F;--green-d:#0a5c42;--green-l:#E8F3EE;--ink:#16181c;--gray:#8a9099;
+    --bg:#f3f4f3;--card:#fff;--line:#e8e8e6;--gold:#C9A227;--red:#D64545;--blue:#1d9bf0;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Noto Sans Arabic",sans-serif;}
+  html,body{height:100%;}
+  body{background:#dfe1df;color:var(--ink);}
+  [dir="rtl"]{direction:rtl;}
+  #app{max-width:600px;margin:0 auto;height:100vh;height:100dvh;background:var(--bg);box-shadow:0 0 50px rgba(0,0,0,.1);display:flex;flex-direction:column;position:relative;overflow:hidden;}
+  /* 视图容器:占满 #app 并作为 flex 列,使内部 content 撑开、tabbar/chatbar 始终贴底 */
+  #view{flex:1;display:flex;flex-direction:column;min-height:0;}
+  /* top bar */
+  .topbar{position:sticky;top:0;z-index:40;height:54px;background:var(--card);border-bottom:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;padding:0 16px;backdrop-filter:saturate(1.8) blur(6px);}
+  .logo{font-weight:800;font-size:18px;color:var(--green);display:flex;align-items:center;gap:6px;}
+  .logo span{color:var(--ink);}
+  .tbtn{background:none;border:none;font-size:20px;cursor:pointer;color:var(--ink);position:relative;padding:6px;}
+  .dot{position:absolute;top:2px;right:2px;width:9px;height:9px;background:var(--red);border-radius:50%;border:2px solid var(--card);}
+  .content{flex:1;padding:12px;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  /* tab bar:在 #view 的 flex 流中由 content(flex:1) 顶到底部,不再浮空 */
+  .tabbar{flex-shrink:0;z-index:40;height:60px;padding-bottom:env(safe-area-inset-bottom);background:var(--card);border-top:1px solid var(--line);display:flex;}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10.5px;color:var(--gray);cursor:pointer;border:none;background:none;position:relative;}
+  .tab .ic{font-size:20px;line-height:1;}
+  .tab.on{color:var(--green);font-weight:700;}
+  .tab .ndot{position:absolute;top:8px;right:calc(50% - 16px);width:8px;height:8px;background:var(--red);border-radius:50%;}
+  /* generic */
+  .card{background:var(--card);border-radius:16px;margin-bottom:10px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+  .row{display:flex;align-items:center;gap:10px;}
+  .col{display:flex;flex-direction:column;}
+  .spacer{flex:1;}
+  .muted{color:var(--gray);font-size:12px;}
+  .ava{border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;flex-shrink:0;width:40px;height:40px;font-size:17px;background:var(--green);}
+  .name{font-size:14px;font-weight:700;}
+  .vbadge{display:inline-flex;align-items:center;gap:2px;font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:99px;vertical-align:middle;}
+  .v1{background:#eee;color:#888;}.v2{background:var(--green-l);color:var(--green);}
+  .v3{background:#FFF6DC;color:#9a7b12;}.v4{background:#16181c;color:var(--gold);}
+  .cam{display:inline-block;font-size:9.5px;color:var(--green);background:var(--green-l);padding:2px 7px;border-radius:99px;font-weight:800;}
+  .ptext{font-size:14.5px;line-height:1.6;margin:10px 0 8px;white-space:pre-wrap;word-break:break-word;}
+  .acts{display:flex;gap:20px;font-size:13px;color:var(--gray);}
+  .acts button{background:none;border:none;color:var(--gray);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:4px;}
+  .acts button.liked{color:var(--red);}
+  .btn{display:block;width:100%;background:var(--green);color:#fff;border:none;font-size:15px;font-weight:700;padding:13px;border-radius:13px;cursor:pointer;transition:.15s;}
+  .btn:active{transform:scale(.98);}
+  .btn:disabled{opacity:.5;}
+  .btn.ghost{background:#fff;color:var(--green);border:1.5px solid var(--green);}
+  .btn.sm{width:auto;padding:7px 16px;font-size:12.5px;border-radius:99px;}
+  input,textarea,select{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:12px;font-size:14px;background:#fff;outline:none;color:var(--ink);font-family:inherit;}
+  input:focus,textarea:focus{border-color:var(--green);}
+  .banner{background:var(--green-l);border:1px solid #bcd9cd;color:var(--green);font-size:12px;border-radius:12px;padding:10px 13px;margin-bottom:10px;line-height:1.6;}
+  .banner.warn{background:#FFF1F1;border-color:#f3c8c8;color:var(--red);}
+  #toast{position:fixed;top:68px;left:50%;transform:translateX(-50%);background:rgba(22,24,28,.94);color:#fff;font-size:13px;padding:10px 18px;border-radius:99px;opacity:0;transition:.25s;z-index:200;pointer-events:none;max-width:90%;text-align:center;}
+  #toast.show{opacity:1;}
+  .center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 24px;color:var(--gray);}
+  .spin{width:26px;height:26px;border:3px solid var(--green-l);border-top-color:var(--green);border-radius:50%;animation:r .7s linear infinite;margin:30px auto;}
+  @keyframes r{to{transform:rotate(360deg)}}
+  /* auth */
+  .auth{flex:1;display:flex;flex-direction:column;justify-content:center;padding:30px;background:linear-gradient(165deg,#0B6E4F,#073d2c);color:#fff;overflow-y:auto;}
+  .auth .box{background:#fff;border-radius:22px;padding:26px;color:var(--ink);box-shadow:0 20px 50px rgba(0,0,0,.3);}
+  .auth input{margin-bottom:11px;}
+  .langsel{display:flex;gap:7px;justify-content:center;margin-bottom:18px;}
+  .langsel button{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:99px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;}
+  .langsel button.on{background:var(--gold);color:#16181c;border-color:var(--gold);}
+  /* verify */
+  .face{width:150px;height:150px;border-radius:50%;border:4px dashed var(--green);margin:18px auto;display:flex;align-items:center;justify-content:center;font-size:58px;background:var(--green-l);position:relative;overflow:hidden;}
+  .scan{position:absolute;left:0;right:0;height:3px;background:var(--green);animation:sc 1.5s ease-in-out infinite;box-shadow:0 0 14px var(--green);}
+  @keyframes sc{0%,100%{top:12%}50%{top:84%}}
+  .vlevel{display:flex;gap:8px;margin-bottom:14px;}
+  .vl{flex:1;text-align:center;padding:8px 4px;border-radius:10px;background:#fff;border:1px solid var(--line);font-size:11px;}
+  .vl.cur{border-color:var(--green);background:var(--green-l);color:var(--green);font-weight:800;}
+  /* stories */
+  .stories{display:flex;gap:13px;overflow-x:auto;padding:4px 2px 12px;scrollbar-width:none;}
+  .stories::-webkit-scrollbar{display:none;}
+  .story{text-align:center;font-size:10.5px;flex-shrink:0;cursor:pointer;width:60px;}
+  .story .ring{width:56px;height:56px;border-radius:50%;padding:2.5px;margin:0 auto 4px;background:linear-gradient(45deg,var(--green),var(--gold));}
+  .story .ring.seen{background:#d5d5d3;}
+  .story .ring .ava{width:100%;height:100%;border:2px solid #fff;}
+  .story .add{width:56px;height:56px;border-radius:50%;border:2px dashed var(--green);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--green);margin:0 auto 4px;}
+  /* video */
+  .videofeed{margin:-12px;}
+  .vcard{position:relative;height:calc(100vh - 132px);min-height:480px;display:flex;flex-direction:column;justify-content:flex-end;padding:18px;color:#fff;border-bottom:6px solid var(--bg);}
+  .vcard .vbg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:90px;}
+  .vside{position:absolute;bottom:90px;display:flex;flex-direction:column;gap:18px;align-items:center;font-size:11px;text-align:center;z-index:2;}
+  .vside button{background:none;border:none;color:#fff;font-size:26px;cursor:pointer;}
+  /* events / seats */
+  .seat{display:inline-flex;width:26px;height:26px;border-radius:50%;font-size:12px;align-items:center;justify-content:center;color:#fff;margin-inline-end:4px;}
+  /* chat */
+  .msgrow{display:flex;margin-bottom:9px;}
+  .msgrow.me{justify-content:flex-end;}
+  .bubble{max-width:74%;padding:9px 13px;border-radius:16px;font-size:14px;line-height:1.45;background:#fff;word-break:break-word;box-shadow:0 1px 1px rgba(0,0,0,.05);}
+  .me .bubble{background:var(--green);color:#fff;}
+  .chatbar{flex-shrink:0;background:var(--card);border-top:1px solid var(--line);padding:9px 10px;padding-bottom:calc(9px + env(safe-area-inset-bottom));display:flex;gap:8px;}
+  .chatbar input{flex:1;}
+  .chatbar button{background:var(--green);color:#fff;border:none;border-radius:12px;padding:0 18px;font-weight:700;cursor:pointer;}
+  .hidden{display:none!important;}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;display:flex;align-items:flex-end;justify-content:center;}
+  .sheet{background:var(--card);width:100%;max-width:600px;border-radius:20px 20px 0 0;padding:18px;max-height:85vh;overflow-y:auto;}
+  .seg{display:flex;background:var(--green-l);border-radius:11px;padding:3px;margin-bottom:12px;}
+  .seg button{flex:1;border:none;background:none;padding:8px;border-radius:9px;font-size:13px;font-weight:700;color:var(--green);cursor:pointer;}
+  .seg button.on{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1);}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toast"></div>
+  <div id="view"><div class="spin"></div></div>
+</div>
+<script>
+/* ==================== i18n ==================== */
+const I18N = {
+  zh: { dir:'ltr', appsub:'没有 AI 美女,没有机器人。只有真人。',
+    login:'登录', register:'注册', phone:'手机号', pwd:'密码(至少6位)', nick:'昵称',
+    have:'已有账号,登录', toReg:'注册(下一步:活体验证)',
+    agree:'注册即同意:① 账号须通过活体验证 ② AI 生成内容零容忍 ③ 一人一号,人脸特征哈希去重(不存原图)',
+    tab_feed:'真人圈', tab_video:'视频', tab_events:'线下局', tab_chat:'消息', tab_me:'我的',
+    noai:'✓ 全站 0 条 AI 内容', allreal:'全部经过活体验证', encrypted:'🔒 端到端加密 · 全真人',
+    placeholder_post:'此刻,真实地记录…(AI 生成内容将被检测并封号)', direct:'📷 App 直拍(签名认证,优先分发)',
+    publish:'发布', all:'推荐', following:'关注', reportAI:'疑似AI?', comment:'评论', send:'发送',
+    verify_title:'真人验证', live_title:'3D 活体人脸检测',
+    live_desc:'确认你是真人并防止重复注册。原始图像验证后立即删除,仅保留不可逆特征哈希。(本测试为模拟流程)',
+    live_start:'开始活体检测', live_later:'稍后再说(仅可浏览)', live_pass:'✓ 验证通过 · 原图已删除',
+    detecting:'检测中…请眨眼', detecting2:'检测中…请缓慢转头',
+    search:'搜索真人 / 内容', dm:'私信', follow:'关注', unfollow:'已关注', editp:'编辑资料', logout:'退出登录',
+    privacy:'🔒 隐私中心', privacy_d:'人脸原图:已删除 · 仅存特征哈希 · 不训练模型、不出境、不商用',
+    hunter:'🏹 猎手计划', hunter_d:'举报 AI 生成内容,经人工复审确认后获得现金奖励',
+    notif:'通知', noNotif:'暂无通知', meet:'线下见面', followers:'粉丝', followingC:'关注',
+    newEvent:'发起活动', etitle:'活动标题', etime:'时间', efee:'费用', ecap:'人数上限', create:'创建',
+    join:'报名', joined:'已报名 ✓', full:'已满员', hello:'打个招呼吧 👋', noConv:'暂无会话,去找人聊聊',
+    sayhi:'说点什么…(端到端加密 · 对方为验证真人)', bio_empty:'这个真人很懒,什么都没写',
+    save:'保存', cancel:'取消', verifyNow:'🛡️ 完成活体验证 →', verifyNow_d:'解锁发帖、聊天、报名活动',
+    aiblocked:'检测到 AI 生成内容,已拒绝发布', loading:'加载中…', empty:'还没有内容', justnow:'刚刚',
+    mago:' 分钟前', hago:' 小时前', dago:' 天前', meetc:' 次', admin:'🛡️ 审核后台',
+    storyAdd:'发故事', mystory:'我的', congrats:'恭喜!你现在是 L2 认证真人', welcome:'欢迎回来,' },
+  en: { dir:'ltr', appsub:'No AI girls. No bots. Only real humans.',
+    login:'Log in', register:'Sign up', phone:'Phone number', pwd:'Password (min 6)', nick:'Nickname',
+    have:'Have an account? Log in', toReg:'Sign up (next: liveness check)',
+    agree:'By signing up: ① accounts must pass liveness ② zero tolerance for AI content ③ one person one account, face-hash dedup (no raw image stored)',
+    tab_feed:'Feed', tab_video:'Video', tab_events:'Meetups', tab_chat:'Chats', tab_me:'Me',
+    noai:'✓ 0 AI content site-wide', allreal:'All liveness-verified', encrypted:'🔒 E2E encrypted · all real',
+    placeholder_post:'Capture this moment, for real… (AI content is detected and banned)', direct:'📷 In-app capture (signed, prioritized)',
+    publish:'Post', all:'For you', following:'Following', reportAI:'Looks AI?', comment:'Comment', send:'Send',
+    verify_title:'Verification', live_title:'3D Liveness Face Check',
+    live_desc:'Confirms you are a real, unique person. The raw image is deleted right after; only an irreversible hash is kept. (Simulated in this build)',
+    live_start:'Start liveness check', live_later:'Later (browse only)', live_pass:'✓ Verified · image deleted',
+    detecting:'Checking… please blink', detecting2:'Checking… turn slowly',
+    search:'Search people / posts', dm:'Message', follow:'Follow', unfollow:'Following', editp:'Edit profile', logout:'Log out',
+    privacy:'🔒 Privacy', privacy_d:'Raw face image: deleted · only hash kept · never trained, exported or sold',
+    hunter:'🏹 Hunter program', hunter_d:'Report AI content; earn cash after human review confirms',
+    notif:'Notifications', noNotif:'No notifications', meet:'Met IRL', followers:'Followers', followingC:'Following',
+    newEvent:'New meetup', etitle:'Title', etime:'Time', efee:'Fee', ecap:'Capacity', create:'Create',
+    join:'Join', joined:'Joined ✓', full:'Full', hello:'Say hi 👋', noConv:'No chats yet',
+    sayhi:'Say something… (E2E encrypted · verified human)', bio_empty:'No bio yet',
+    save:'Save', cancel:'Cancel', verifyNow:'🛡️ Complete liveness →', verifyNow_d:'Unlock posting, chat, meetups',
+    aiblocked:'AI-generated content detected, post rejected', loading:'Loading…', empty:'Nothing here yet', justnow:'just now',
+    mago:'m ago', hago:'h ago', dago:'d ago', meetc:' times', admin:'🛡️ Moderation',
+    storyAdd:'Add story', mystory:'You', congrats:'You are now an L2 verified human!', welcome:'Welcome back, ' },
+  ar: { dir:'rtl', appsub:'لا فتيات ذكاء اصطناعي. لا روبوتات. بشر حقيقيون فقط.',
+    login:'تسجيل الدخول', register:'إنشاء حساب', phone:'رقم الجوال', pwd:'كلمة المرور (6 على الأقل)', nick:'الاسم',
+    have:'لديك حساب؟ سجّل الدخول', toReg:'إنشاء حساب (التالي: فحص الحيوية)',
+    agree:'بالتسجيل: ① يجب اجتياز فحص الحيوية ② صفر تسامح مع محتوى الذكاء الاصطناعي ③ شخص واحد لحساب واحد، تجزئة الوجه (دون حفظ الصورة)',
+    tab_feed:'الرئيسية', tab_video:'فيديو', tab_events:'لقاءات', tab_chat:'الرسائل', tab_me:'حسابي',
+    noai:'✓ صفر محتوى ذكاء اصطناعي', allreal:'الجميع موثّق بالحيوية', encrypted:'🔒 مشفّر · بشر فقط',
+    placeholder_post:'وثّق هذه اللحظة بصدق… (يُكتشف محتوى الذكاء الاصطناعي ويُحظر)', direct:'📷 تصوير داخل التطبيق (موقّع، أولوية)',
+    publish:'نشر', all:'مقترح', following:'أتابع', reportAI:'يبدو مزيّفاً؟', comment:'تعليق', send:'إرسال',
+    verify_title:'التوثيق', live_title:'فحص الوجه الحي ثلاثي الأبعاد',
+    live_desc:'يؤكد أنك شخص حقيقي وفريد. تُحذف الصورة الأصلية فوراً ويُحفظ تجزئة غير قابلة للعكس فقط. (محاكاة في هذه النسخة)',
+    live_start:'ابدأ فحص الحيوية', live_later:'لاحقاً (تصفّح فقط)', live_pass:'✓ موثّق · حُذفت الصورة',
+    detecting:'جارٍ الفحص… اطرف بعينك', detecting2:'جارٍ الفحص… أدر رأسك ببطء',
+    search:'ابحث عن أشخاص / منشورات', dm:'رسالة', follow:'متابعة', unfollow:'أتابع', editp:'تعديل الملف', logout:'تسجيل الخروج',
+    privacy:'🔒 الخصوصية', privacy_d:'صورة الوجه: محذوفة · تجزئة فقط · لا تدريب ولا تصدير ولا بيع',
+    hunter:'🏹 برنامج الصيادين', hunter_d:'أبلغ عن محتوى الذكاء الاصطناعي واكسب نقداً بعد المراجعة',
+    notif:'الإشعارات', noNotif:'لا إشعارات', meet:'لقاءات واقعية', followers:'متابِعون', followingC:'أتابع',
+    newEvent:'لقاء جديد', etitle:'العنوان', etime:'الوقت', efee:'الرسوم', ecap:'السعة', create:'إنشاء',
+    join:'انضمام', joined:'مشترك ✓', full:'مكتمل', hello:'ألقِ التحية 👋', noConv:'لا محادثات بعد',
+    sayhi:'اكتب شيئاً… (مشفّر · إنسان موثّق)', bio_empty:'لا نبذة بعد',
+    save:'حفظ', cancel:'إلغاء', verifyNow:'🛡️ أكمل فحص الحيوية ←', verifyNow_d:'افتح النشر والدردشة واللقاءات',
+    aiblocked:'تم اكتشاف محتوى ذكاء اصطناعي، رُفض النشر', loading:'جارٍ التحميل…', empty:'لا شيء هنا بعد', justnow:'الآن',
+    mago:' د', hago:' س', dago:' ي', meetc:' مرات', admin:'🛡️ الإشراف',
+    storyAdd:'قصة', mystory:'أنت', congrats:'أنت الآن إنسان موثّق L2!', welcome:'مرحباً بعودتك، ' },
+};
+let lang = localStorage.getItem('lang') || 'zh';
+function t(k){ return (I18N[lang] && I18N[lang][k]) || I18N.zh[k] || k; }
+function applyDir(){ document.documentElement.dir = I18N[lang].dir; document.documentElement.lang = lang; }
+
+/* ==================== infra ==================== */
+const $ = s => document.querySelector(s);
+let token = localStorage.getItem('token') || '';
+let me = null, view = 'feed', chatWith = null, pollTimer = null, unread = 0;
+let ws = null, wsRetry = 0, chatRefresh = null;
+// 常用国家/地区区号(可继续扩充)
+const DIAL_CODES = [['86','🇨🇳 +86'],['852','🇭🇰 +852'],['853','🇲🇴 +853'],['886','🇹🇼 +886'],['971','🇦🇪 +971'],['1','🇺🇸 +1'],['44','🇬🇧 +44'],['65','🇸🇬 +65'],['60','🇲🇾 +60'],['81','🇯🇵 +81'],['82','🇰🇷 +82'],['66','🇹🇭 +66'],['84','🇻🇳 +84'],['91','🇮🇳 +91'],['62','🇮🇩 +62'],['61','🇦🇺 +61'],['7','🇷🇺 +7'],['49','🇩🇪 +49'],['33','🇫🇷 +33'],['966','🇸🇦 +966']];
+
+async function api(method, path, body){
+  const r = await fetch(path, { method, headers:{ 'Content-Type':'application/json', ...(token?{Authorization:'Bearer '+token}:{}) }, body: body?JSON.stringify(body):undefined });
+  let data={}; try{ data=await r.json(); }catch{}
+  if(!r.ok){ const e=new Error(data.error||('HTTP '+r.status)); e.code=data.error; throw e; }
+  return data;
+}
+function toast(m){ const el=$('#toast'); el.textContent=m; el.classList.add('show'); clearTimeout(el._h); el._h=setTimeout(()=>el.classList.remove('show'),2400); }
+function esc(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function errMsg(e){ if(e.code==='AI_BLOCKED') return t('aiblocked'); return e.message; }
+function badge(l){ return `<span class="vbadge v${l}">${['','L1','✓','🪪','⭐'][l]}</span>`; }
+function avaColor(n){ const cs=['#5B8DEF','#E8956B','#9B7EDE','#4EA8A0','#D6708B','#C9A227','#0B6E4F']; let h=0; for(const c of (n||'?')) h=(h*31+c.charCodeAt(0))>>>0; return cs[h%cs.length]; }
+function ava(u,sz){ const n=(u&&u.nickname)||'?'; return `<div class="ava" style="background:${avaColor(n)};${sz?`width:${sz}px;height:${sz}px;font-size:${sz*0.42}px;`:''}">${esc(n[0])}</div>`; }
+function ago(ts){ const s=(Date.now()-ts)/1000; if(s<60)return t('justnow'); if(s<3600)return Math.floor(s/60)+t('mago'); if(s<86400)return Math.floor(s/3600)+t('hago'); return Math.floor(s/86400)+t('dago'); }
+
+/* ==================== shell ==================== */
+const TABS=[['feed','🏠'],['video','🎬'],['events','📍'],['chat','💬'],['me','👤']];
+function shell(inner, topRight){
+  return `<div class="topbar">
+    <div class="logo">真人<span>圈</span></div>
+    <div class="row">${topRight||''}
+      <button class="tbtn" onclick="go('search')">🔍</button>
+      <button class="tbtn" onclick="go('notif')">🔔<span id="bellDot" class="dot" style="display:${unread?'inline-block':'none'}"></span></button>
+    </div></div>
+    <div class="content">${inner}</div>
+    <div class="tabbar">${TABS.map(([id,ic])=>`<button class="tab ${view===id?'on':''}" onclick="go('${id}')"><span class="ic">${ic}</span>${t('tab_'+id)}${id==='chat'?`<span id="chatNdot" class="ndot" style="display:${unread?'inline-block':'none'}"></span>`:''}</button>`).join('')}</div>`;
+}
+
+async function go(v, arg){
+  view=v; chatWith=(v==='chat'&&arg)?arg:(v==='chat'?null:null);
+  if(v==='chat'&&arg) chatWith=arg;
+  if(v==='profile') chatWith=arg;
+  clearInterval(pollTimer); pollTimer=null; chatRefresh=null;
+  render();
+}
+async function boot(){
+  applyDir();
+  if(!token){ return renderAuth(); }
+  try{ const r=await api('GET','/api/me'); me=r.user; me.isAdmin=r.isAdmin; }
+  catch{ token=''; localStorage.removeItem('token'); return renderAuth(); }
+  refreshUnread();
+  connectWS();
+  render();
+}
+async function refreshUnread(){ try{ const r=await api('GET','/api/notifications'); unread=r.unread; }catch{} }
+
+/* ==================== 实时推送(WebSocket,轮询为降级兜底) ==================== */
+function connectWS(){
+  if(!token) return;
+  if(ws && (ws.readyState===0 || ws.readyState===1)) return; // 已连接/连接中
+  let sock; try{ sock=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws', [token]); }
+  catch{ return; } // 浏览器不支持时静默降级为轮询
+  ws=sock;
+  sock.onopen=()=>{ wsRetry=0; };
+  sock.onmessage=ev=>{ let d; try{ d=JSON.parse(ev.data); }catch{ return; } handleWS(d); };
+  sock.onerror=()=>{ try{ sock.close(); }catch{} };
+  sock.onclose=()=>{ if(ws===sock) ws=null; if(token){ wsRetry=Math.min(wsRetry+1,6); setTimeout(connectWS, 800*wsRetry); } };
+}
+function disconnectWS(){ const w=ws; ws=null; if(w){ try{ w.onclose=null; w.close(); }catch{} } }
+function handleWS(d){
+  if(d.type==='message'){
+    // 正在与对端聊天 → 实时刷新气泡;否则在会话列表则刷新列表
+    const m=d.message;
+    if(view==='chat' && chatWith && (m.from===chatWith || m.to===chatWith) && chatRefresh){ chatRefresh(); }
+    else if(view==='chat' && !chatWith){ renderChats(); }
+  } else if(d.type==='notify'){
+    unread++;
+    if(view==='notif'){ renderNotif(); }
+    else if(view==='chat' && !chatWith){ renderChats(); }
+    else{ const dot=$('#bellDot'); if(dot) dot.style.display='inline-block'; const nd=$('#chatNdot'); if(nd) nd.style.display='inline-block'; }
+  }
+}
+function render(){
+  const map={ feed:renderFeed, video:renderVideo, events:renderEvents, chat:(chatWith?renderChat:renderChats),
+    me:renderMe, profile:renderProfile, notif:renderNotif, search:renderSearch, verify:renderVerify };
+  if(!token) return renderAuth();
+  if(me.level<2 && !['me','verify','profile','notif','search'].includes(view)) return renderVerify();
+  (map[view]||renderFeed)();
+}
+
+/* ==================== auth ==================== */
+function renderAuth(){
+  applyDir();
+  $('#view').innerHTML = `<div class="auth">
+    <div style="text-align:center;margin-bottom:20px;">
+      <div style="font-size:50px;">🤝</div>
+      <div style="font-size:25px;font-weight:800;margin:6px 0 4px;">真人圈 RealCircle</div>
+      <div style="font-size:13px;opacity:.85;">${esc(t('appsub'))}</div>
+    </div>
+    <div class="langsel">
+      ${['zh','en','ar'].map(l=>`<button class="${lang===l?'on':''}" onclick="setLang('${l}')">${{zh:'中文',en:'English',ar:'عربي'}[l]}</button>`).join('')}
+    </div>
+    <div class="box">
+      <div class="row" style="gap:8px;margin-bottom:11px;">
+        <select id="dial" style="width:auto;flex-shrink:0;font-weight:700;">${DIAL_CODES.map(([c,label])=>`<option value="${c}"${c===(localStorage.getItem('dial')||'86')?' selected':''}>${label}</option>`).join('')}</select>
+        <input id="phone" placeholder="${esc(t('phone'))}" maxlength="14" inputmode="numeric" style="flex:1;margin:0;">
+      </div>
+      <input id="pwd" type="password" placeholder="${esc(t('pwd'))}">
+      <input id="nick" placeholder="${esc(t('nick'))}">
+      <button class="btn" onclick="doRegister()">${esc(t('toReg'))}</button>
+      <div style="height:8px"></div>
+      <button class="btn ghost" onclick="doLogin()">${esc(t('have'))}</button>
+      <div class="muted" style="margin-top:10px;line-height:1.7;">${esc(t('agree'))}</div>
+    </div></div>`;
+}
+function setLang(l){ lang=l; localStorage.setItem('lang',l); applyDir(); token?render():renderAuth(); }
+async function doRegister(){
+  const dial=$('#dial').value; localStorage.setItem('dial',dial);
+  try{ const r=await api('POST','/api/register',{dial,phone:$('#phone').value,password:$('#pwd').value,nickname:$('#nick').value});
+    token=r.token; me=r.user; localStorage.setItem('token',token); connectWS(); go('verify'); }
+  catch(e){ toast(errMsg(e)); }
+}
+async function doLogin(){
+  const dial=$('#dial').value; localStorage.setItem('dial',dial);
+  try{ const r=await api('POST','/api/login',{dial,phone:$('#phone').value,password:$('#pwd').value});
+    token=r.token; me=r.user; localStorage.setItem('token',token); await refreshUnread(); connectWS(); go(me.level>=2?'feed':'verify'); }
+  catch(e){ toast(errMsg(e)); }
+}
+
+/* ==================== verify ==================== */
+function renderVerify(){
+  $('#view').innerHTML = shell(`
+    <div class="vlevel">${[1,2,3,4].map(l=>`<div class="vl ${me.level>=l?'cur':''}">${['','L1','L2 活体','L3 实名','L4 面验'][l]}</div>`).join('')}</div>
+    <div class="card">
+      <b style="font-size:15px;">${esc(t('live_title'))}</b>
+      <div class="muted" style="margin-top:6px;line-height:1.7;">${esc(t('live_desc'))}</div>
+      <div class="face" id="face">🙂</div>
+      <button class="btn" id="liveBtn" onclick="doLiveness()">${esc(t('live_start'))}</button>
+      <div style="height:8px"></div>
+      <button class="btn ghost" onclick="go('me')">${esc(t('live_later'))}</button>
+    </div>`);
+}
+async function doLiveness(){
+  const btn=$('#liveBtn'), face=$('#face');
+  btn.disabled=true; btn.textContent=t('detecting'); face.insertAdjacentHTML('beforeend','<div class="scan"></div>');
+  await new Promise(r=>setTimeout(r,1300)); btn.textContent=t('detecting2');
+  await new Promise(r=>setTimeout(r,1300));
+  try{
+    let s=localStorage.getItem('faceSample'); if(!s){ s=crypto.getRandomValues(new Uint32Array(4)).join('-'); localStorage.setItem('faceSample',s); }
+    const r=await api('POST','/api/liveness',{faceSample:s}); me=r.user;
+    face.textContent='✅'; btn.textContent=t('live_pass'); toast(t('congrats'));
+    setTimeout(()=>go('feed'),1100);
+  }catch(e){ toast(errMsg(e)); btn.disabled=false; btn.textContent=t('live_start'); face.textContent='🙂'; }
+}
+
+/* ==================== feed ==================== */
+let feedScope='all';
+async function renderFeed(){
+  $('#view').innerHTML = shell(`
+    <div id="stories"></div>
+    ${me.level>=2?`<div class="card">
+      <textarea id="ptext" rows="2" placeholder="${esc(t('placeholder_post'))}"></textarea>
+      <div class="row" style="margin-top:6px;">
+        <label class="muted"><input type="checkbox" id="pdirect" checked style="width:auto;margin-inline-end:5px;">${esc(t('direct'))}</label>
+        <span class="spacer"></span>
+        <button class="btn sm" onclick="doPost(false)">${esc(t('publish'))}</button>
+      </div></div>`:''}
+    <div class="seg"><button class="${feedScope==='all'?'on':''}" onclick="setScope('all')">${esc(t('all'))}</button><button class="${feedScope==='following'?'on':''}" onclick="setScope('following')">${esc(t('following'))}</button></div>
+    <div id="list"><div class="spin"></div></div>`, `<span class="cam">${esc(t('noai'))}</span>`);
+  loadStories(); loadFeed();
+}
+function setScope(s){ feedScope=s; renderFeed(); }
+async function loadStories(){
+  try{ const {stories}=await api('GET','/api/stories'); const box=$('#stories'); if(!box)return;
+    box.className='stories';
+    box.innerHTML = `<div class="story" onclick="promptStory()"><div class="add">＋</div>${esc(t('storyAdd'))}</div>` +
+      stories.map(s=>`<div class="story" onclick="viewStory('${s.user.id}')"><div class="ring"><div class="ava" style="background:${avaColor(s.user.nickname)}">${esc(s.user.nickname[0])}</div></div>${esc(s.user.id===me.id?t('mystory'):s.user.nickname)}</div>`).join('');
+  }catch{}
+}
+window._stories=null;
+async function viewStory(uid){ try{ const {stories}=await api('GET','/api/stories'); const s=stories.find(x=>x.user.id===uid); if(s) toast(s.items[s.items.length-1].text); }catch{} }
+function promptStory(){ const txt=prompt(t('storyAdd')); if(txt&&txt.trim()) doPost(true,txt); }
+async function loadFeed(){
+  try{ const {posts}=await api('GET','/api/posts'+(feedScope==='following'?'?scope=following':''));
+    const el=$('#list'); if(!el)return;
+    el.innerHTML = posts.length?posts.map(postCard).join(''):`<div class="banner">${esc(t('empty'))}</div>`;
+  }catch(e){ const el=$('#list'); if(el) el.innerHTML=`<div class="banner warn">${esc(errMsg(e))}</div>`; }
+}
+function postCard(p){
+  return `<div class="card">
+    <div class="row"><div onclick="go('profile','${p.author.id}')" style="cursor:pointer">${ava(p.author)}</div>
+      <div class="col" onclick="go('profile','${p.author.id}')" style="cursor:pointer"><div class="name">${esc(p.author.nickname)} ${badge(p.author.level)}</div><div class="muted">${ago(p.ts)}${p.kind==='video'?' · 🎬':''}</div></div>
+      <span class="spacer"></span>${p.mine?`<button class="tbtn" onclick="delPost('${p.id}')">🗑️</button>`:''}</div>
+    <div class="ptext">${esc(p.text)}</div>
+    ${p.direct?`<div style="margin-bottom:8px;"><span class="cam">📷 App 直拍 · 已签名</span></div>`:''}
+    <div class="acts">
+      <button class="${p.liked?'liked':''}" onclick="like('${p.id}',this)">${p.liked?'❤️':'🤍'} <i style="font-style:normal">${p.likes}</i></button>
+      <button onclick="openComments('${p.id}')">💬 ${p.comments}</button>
+      <span class="spacer"></span>
+      <button onclick="report('${p.id}')">⚠ ${esc(t('reportAI'))}</button>
+    </div></div>`;
+}
+async function doPost(story, storyText){
+  const text = story? storyText : $('#ptext').value;
+  const direct = story? true : $('#pdirect').checked;
+  try{ await api('POST','/api/posts',{text,direct,story:!!story,kind:'text'});
+    toast('✓'); if(!story)$('#ptext').value=''; renderFeed(); }
+  catch(e){ toast(errMsg(e)); }
+}
+async function like(id,btn){ try{ const r=await api('POST',`/api/posts/${id}/like`); btn.classList.toggle('liked',r.liked); btn.firstChild.textContent=(r.liked?'❤️':'🤍')+' '; btn.querySelector('i').textContent=r.likes; }catch(e){ toast(errMsg(e)); } }
+async function report(id){ try{ const r=await api('POST',`/api/posts/${id}/report`); toast(r.message); if(r.autoRemoved)render(); }catch(e){ toast(errMsg(e)); } }
+async function delPost(id){ try{ await api('DELETE',`/api/posts/${id}`); toast('🗑️'); render(); }catch(e){ toast(errMsg(e)); } }
+
+/* comments modal */
+async function openComments(pid){
+  const m=document.createElement('div'); m.className='modal'; m.onclick=e=>{if(e.target===m)m.remove();};
+  m.innerHTML=`<div class="sheet"><b>${esc(t('comment'))}</b><div id="clist" style="margin:12px 0;"><div class="spin"></div></div>
+    ${me.level>=2?`<div class="row"><input id="ctext" placeholder="${esc(t('comment'))}…"><button class="btn sm" style="margin-inline-start:8px;" onclick="addComment('${pid}')">${esc(t('send'))}</button></div>`:''}</div>`;
+  document.body.appendChild(m); loadComments(pid);
+}
+async function loadComments(pid){
+  try{ const {comments}=await api('GET',`/api/posts/${pid}/comments`); const el=$('#clist'); if(!el)return;
+    el.innerHTML = comments.length?comments.map(c=>`<div class="card" style="padding:10px"><div class="row">${ava(c.author,30)}<div class="col"><div class="name" style="font-size:13px">${esc(c.author.nickname)} ${badge(c.author.level)}</div><div class="muted">${ago(c.ts)}</div></div></div><div style="margin-top:6px;font-size:14px">${esc(c.text)}</div></div>`).join(''):`<div class="muted" style="text-align:center;padding:20px">${esc(t('hello'))}</div>`;
+  }catch(e){ const el=$('#clist'); if(el)el.innerHTML=`<div class="banner warn">${esc(errMsg(e))}</div>`; }
+}
+async function addComment(pid){ const inp=$('#ctext'); if(!inp.value.trim())return; try{ await api('POST',`/api/posts/${pid}/comments`,{text:inp.value}); inp.value=''; loadComments(pid); }catch(e){ toast(errMsg(e)); } }
+
+/* ==================== video ==================== */
+async function renderVideo(){
+  $('#view').innerHTML = shell(`<div id="vfeed" class="videofeed"><div class="spin"></div></div>`);
+  try{ const {posts}=await api('GET','/api/posts?kind=video'); const el=$('#vfeed'); if(!el)return;
+    el.innerHTML = posts.length?posts.map((p,i)=>`
+      <div class="vcard" style="background:linear-gradient(160deg,${avaColor(p.author.nickname)},#0e1420);">
+        <div class="vbg">${['🎸','🏔️','🌊','🎨','🍜','⛺'][i%6]}</div>
+        <div class="vside" style="${I18N[lang].dir==='rtl'?'left:12px':'right:12px'}">
+          <div onclick="go('profile','${p.author.id}')">${ava(p.author,44)}</div>
+          <button class="${p.liked?'liked':''}" onclick="like('${p.id}',this)">${p.liked?'❤️':'🤍'}<br><span style="font-size:11px">${p.likes}</span></button>
+          <button onclick="openComments('${p.id}')">💬<br><span style="font-size:11px">${p.comments}</span></button>
+          <button onclick="report('${p.id}')">⚠️<br><span style="font-size:10px">${esc(t('reportAI'))}</span></button>
+        </div>
+        <div style="position:relative;z-index:2;">
+          <div style="font-weight:800;">@${esc(p.author.nickname)} ${badge(p.author.level)}</div>
+          <div style="font-size:13px;margin-top:6px;line-height:1.5;opacity:.95">${esc(p.text)}</div>
+          <div style="font-size:10.5px;margin-top:6px;opacity:.6">🛡️ 直拍签名 · 未检测到 AI 痕迹</div>
+        </div></div>`).join(''):`<div class="center">${esc(t('empty'))}</div>`;
+  }catch(e){ $('#vfeed').innerHTML=`<div class="banner warn">${esc(errMsg(e))}</div>`; }
+}
+
+/* ==================== events ==================== */
+async function renderEvents(){
+  $('#view').innerHTML = shell(`
+    ${me.level>=3?`<button class="btn" style="margin-bottom:10px;" onclick="newEvent()">+ ${esc(t('newEvent'))}</button>`:''}
+    <div class="banner">⭐ ${lang==='ar'?'بعد توثيق 3 أشخاص لك وجهاً لوجه تحصل على شارة «اللقاء».':(lang==='en'?'Confirmed face-to-face by 3 verified users unlocks the top "Met" badge.':'被 3 位实名用户当面确认,解锁最高「面验」徽章。')}</div>
+    <div id="elist"><div class="spin"></div></div>`);
+  loadEvents();
+}
+async function loadEvents(){
+  try{ const {events}=await api('GET','/api/events'); const el=$('#elist'); if(!el)return;
+    el.innerHTML = events.map(e=>`<div class="card">
+      <div class="name" style="font-size:15px;">${esc(e.title)}</div>
+      <div class="muted" style="margin:4px 0 10px;">${esc(e.time)} · ${esc(e.fee)} · L${e.minLevel}+ · ${e.members.length}/${e.cap}</div>
+      <div class="row" style="flex-wrap:wrap">${e.members.map(m=>`<span class="seat" style="background:${avaColor(m.nickname)}" title="${esc(m.nickname)}">${esc(m.nickname[0])}</span>`).join('')}
+        <span class="spacer"></span>
+        <button class="btn sm" ${e.joined||e.members.length>=e.cap?'disabled':''} onclick="joinEvent('${e.id}')">${e.joined?t('joined'):(e.members.length>=e.cap?t('full'):t('join'))}</button></div>
+    </div>`).join('');
+  }catch(e){ $('#elist').innerHTML=`<div class="banner warn">${esc(errMsg(e))}</div>`; }
+}
+async function joinEvent(id){ try{ const r=await api('POST',`/api/events/${id}/join`); toast(r.message); loadEvents(); }catch(e){ toast(errMsg(e)); } }
+function newEvent(){
+  const m=document.createElement('div'); m.className='modal'; m.onclick=e=>{if(e.target===m)m.remove();};
+  m.innerHTML=`<div class="sheet"><b>${esc(t('newEvent'))}</b>
+    <div style="height:12px"></div>
+    <input id="etitle" placeholder="${esc(t('etitle'))}"><div style="height:8px"></div>
+    <input id="etime" placeholder="${esc(t('etime'))}"><div style="height:8px"></div>
+    <input id="efee" placeholder="${esc(t('efee'))}"><div style="height:8px"></div>
+    <input id="ecap" type="number" placeholder="${esc(t('ecap'))}" value="6"><div style="height:12px"></div>
+    <button class="btn" onclick="createEvent(this)">${esc(t('create'))}</button></div>`;
+  document.body.appendChild(m);
+}
+async function createEvent(btn){ try{ await api('POST','/api/events',{title:$('#etitle').value,time:$('#etime').value,fee:$('#efee').value,cap:$('#ecap').value}); btn.closest('.modal').remove(); toast('✓'); renderEvents(); }catch(e){ toast(errMsg(e)); } }
+
+/* ==================== chats ==================== */
+async function renderChats(){
+  $('#view').innerHTML = shell(`<div class="banner">${esc(t('encrypted'))} · 🛡️ AI 代聊防护已开启</div><div id="clist"><div class="spin"></div></div>`);
+  try{ const {conversations}=await api('GET','/api/conversations'); const el=$('#clist'); if(!el)return;
+    el.innerHTML = conversations.length?conversations.map(c=>`<div class="card row" style="cursor:pointer" onclick="go('chat','${c.user.id}')">${ava(c.user,44)}
+      <div class="col" style="flex:1;min-width:0;"><div class="name">${esc(c.user.nickname)} ${badge(c.user.level)}</div><div class="muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(c.last)}</div></div>
+      <span class="muted">${ago(c.ts)}</span></div>`).join(''):`<div class="banner">${esc(t('noConv'))}</div>`;
+  }catch(e){ $('#clist').innerHTML=`<div class="banner warn">${esc(errMsg(e))}</div>`; }
+}
+async function renderChat(){
+  let other; try{ other=(await api('GET','/api/users/'+chatWith)).user; }catch{ other={nickname:'?',level:1}; }
+  $('#view').innerHTML = `<div class="topbar"><button class="row" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--ink)" onclick="go('chat')">${I18N[lang].dir==='rtl'?'›':'‹'} ${esc(other.nickname)} ${badge(other.level)}</button><span class="cam">🔒</span></div>
+    <div class="content" id="msgs"><div class="spin"></div></div>
+    <div class="chatbar"><input id="cinput" placeholder="${esc(t('sayhi'))}" onkeydown="if(event.key==='Enter')sendMsg()"><button onclick="sendMsg()">${esc(t('send'))}</button></div>`;
+  const refresh=async()=>{ try{ const {messages,me:mid}=await api('GET','/api/messages?with='+chatWith); const box=$('#msgs'); if(!box)return;
+    box.innerHTML = messages.length?messages.map(m=>`<div class="msgrow ${m.from===mid?'me':''}"><div class="bubble">${esc(m.text)}</div></div>`).join(''):`<div class="banner">${esc(t('hello'))}</div>`;
+    box.scrollTop=box.scrollHeight; }catch{} };
+  chatRefresh=refresh;                          // WS 收到消息时即时刷新
+  await refresh(); pollTimer=setInterval(refresh,2500); // 轮询作为 WS 不可用时的降级兜底
+}
+async function sendMsg(){ const inp=$('#cinput'); if(!inp.value.trim())return; try{ await api('POST','/api/messages',{to:chatWith,text:inp.value}); inp.value=''; const {messages,me:mid}=await api('GET','/api/messages?with='+chatWith); const box=$('#msgs'); box.innerHTML=messages.map(m=>`<div class="msgrow ${m.from===mid?'me':''}"><div class="bubble">${esc(m.text)}</div></div>`).join(''); box.scrollTop=box.scrollHeight; }catch(e){ toast(errMsg(e)); } }
+
+/* ==================== me / profile ==================== */
+async function renderMe(){ await renderProfileBody(me.id, true); }
+async function renderProfile(){ await renderProfileBody(chatWith||me.id, (chatWith||me.id)===me.id); }
+async function renderProfileBody(uid, isMe){
+  let data; try{ data=await api('GET','/api/users/'+uid); }catch(e){ $('#view').innerHTML=shell(`<div class="banner warn">${esc(errMsg(e))}</div>`); return; }
+  const u=data.user;
+  const head=`<div style="background:linear-gradient(135deg,var(--green),var(--green-d));padding:24px 18px;color:#fff;">
+    <div class="row">${ava(u,58)}<div class="col"><div style="font-size:18px;font-weight:800;">${esc(u.nickname)} ${badge(u.level)}</div><div style="font-size:12px;opacity:.85;margin-top:3px;">${data.levelName} · ${esc(u.bio||t('bio_empty'))}</div></div></div>
+    <div class="row" style="margin-top:14px;gap:20px;font-size:13px;">
+      <span><b>${u.followers}</b> ${esc(t('followers'))}</span><span><b>${u.following}</b> ${esc(t('followingC'))}</span><span><b>${u.meetCount}</b> ${esc(t('meet'))}</span></div>
+    <div style="margin-top:14px;">${isMe?
+      `<button class="btn sm ghost" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.4)" onclick="editProfile()">${esc(t('editp'))}</button>`:
+      `<button class="btn sm" style="background:#fff;color:var(--green)" onclick="toggleFollow('${u.id}',this)">${u.isFollowing?t('unfollow'):t('follow')}</button>
+       <button class="btn sm ghost" style="background:rgba(255,255,255,.15);color:#fff;border-color:rgba(255,255,255,.4);margin-inline-start:8px;" onclick="go('chat','${u.id}')">${esc(t('dm'))}</button>`}</div></div>`;
+  const posts = data.posts.length?data.posts.map(postCard).join(''):`<div class="banner">${esc(t('empty'))}</div>`;
+  const extra = isMe? `
+    ${me.level<2?`<div class="card" style="cursor:pointer" onclick="go('verify')"><b>${esc(t('verifyNow'))}</b><div class="muted" style="margin-top:4px;">${esc(t('verifyNow_d'))}</div></div>`:''}
+    ${me.isAdmin?`<div class="card" style="cursor:pointer" onclick="go('search');openAdmin()"><b>${esc(t('admin'))}</b></div>`:''}
+    <div class="card"><b>${esc(t('privacy'))}</b><div class="muted" style="margin-top:4px;">${esc(t('privacy_d'))}</div></div>
+    <div class="card"><b>${esc(t('hunter'))}</b><div class="muted" style="margin-top:4px;">${esc(t('hunter_d'))}</div></div>
+    <div class="langsel" style="margin:12px 0">${['zh','en','ar'].map(l=>`<button class="${lang===l?'on':''}" style="background:${lang===l?'var(--gold)':'var(--green-l)'};color:${lang===l?'#16181c':'var(--green)'};border:none" onclick="setLang('${l}')">${{zh:'中文',en:'EN',ar:'عربي'}[l]}</button>`).join('')}</div>
+    <button class="btn ghost" onclick="logout()">${esc(t('logout'))}</button>`:'';
+  $('#view').innerHTML = `${head}<div class="content" style="padding-top:12px">${extra}${posts}</div>
+    <div class="tabbar">${TABS.map(([id,ic])=>`<button class="tab ${view==='me'&&id==='me'?'on':''}" onclick="go('${id}')"><span class="ic">${ic}</span>${t('tab_'+id)}</button>`).join('')}</div>`;
+}
+async function toggleFollow(uid,btn){ try{ const r=await api('POST',`/api/users/${uid}/follow`); btn.textContent=r.isFollowing?t('unfollow'):t('follow'); }catch(e){ toast(errMsg(e)); } }
+function editProfile(){
+  const m=document.createElement('div'); m.className='modal'; m.onclick=e=>{if(e.target===m)m.remove();};
+  m.innerHTML=`<div class="sheet"><b>${esc(t('editp'))}</b><div style="height:12px"></div>
+    <input id="enick" value="${esc(me.nickname)}" maxlength="20"><div style="height:8px"></div>
+    <textarea id="ebio" rows="3" maxlength="200" placeholder="${esc(t('bio_empty'))}">${esc(me.bio||'')}</textarea><div style="height:12px"></div>
+    <button class="btn" onclick="saveProfile(this)">${esc(t('save'))}</button></div>`;
+  document.body.appendChild(m);
+}
+async function saveProfile(btn){ try{ const r=await api('POST','/api/me',{nickname:$('#enick').value,bio:$('#ebio').value}); me=r.user; btn.closest('.modal').remove(); toast('✓'); render(); }catch(e){ toast(errMsg(e)); } }
+function logout(){ api('POST','/api/logout').catch(()=>{}); disconnectWS(); token=''; me=null; localStorage.removeItem('token'); view='feed'; renderAuth(); }
+
+/* ==================== notifications ==================== */
+async function renderNotif(){
+  $('#view').innerHTML = shell(`<div id="nlist"><div class="spin"></div></div>`);
+  try{ const {notifications}=await api('GET','/api/notifications'); await api('POST','/api/notifications/read'); unread=0;
+    const verb={like:lang==='ar'?'أعجب بمنشورك':(lang==='en'?'liked your post':'赞了你的动态'),comment:lang==='ar'?'علّق على منشورك':(lang==='en'?'commented':'评论了你'),follow:lang==='ar'?'تابعك':(lang==='en'?'followed you':'关注了你'),message:lang==='ar'?'راسلك':(lang==='en'?'messaged you':'给你发了消息')};
+    const el=$('#nlist'); if(!el)return;
+    el.innerHTML = notifications.length?notifications.map(n=>`<div class="card row" onclick="go('profile','${n.from.id}')" style="cursor:pointer">${ava(n.from,38)}<div class="col"><div class="name">${esc(n.from.nickname)} ${badge(n.from.level)}</div><div class="muted">${verb[n.type]||n.type} · ${ago(n.ts)}</div></div></div>`).join(''):`<div class="banner">${esc(t('noNotif'))}</div>`;
+  }catch(e){ $('#nlist').innerHTML=`<div class="banner warn">${esc(errMsg(e))}</div>`; }
+}
+
+/* ==================== search ==================== */
+async function renderSearch(){
+  $('#view').innerHTML = shell(`<input id="sq" placeholder="${esc(t('search'))}" oninput="doSearch(this.value)" autofocus><div id="sres" style="margin-top:10px"></div>`);
+}
+let _st=null;
+function doSearch(q){ clearTimeout(_st); _st=setTimeout(async()=>{ if(!q.trim()){$('#sres').innerHTML='';return;} try{ const r=await api('GET','/api/search?q='+encodeURIComponent(q)); const el=$('#sres'); if(!el)return;
+  el.innerHTML = r.users.map(u=>`<div class="card row" onclick="go('profile','${u.id}')" style="cursor:pointer">${ava(u,40)}<div class="col"><div class="name">${esc(u.nickname)} ${badge(u.level)}</div><div class="muted">${esc(u.bio||t('bio_empty'))}</div></div></div>`).join('') + r.posts.map(postCard).join('');
+  if(!r.users.length&&!r.posts.length) el.innerHTML=`<div class="banner">${esc(t('empty'))}</div>`;
+}catch(e){ toast(errMsg(e)); } },300); }
+
+/* ==================== admin ==================== */
+async function openAdmin(){
+  try{ const {queue}=await api('GET','/api/admin/reports');
+    const m=document.createElement('div'); m.className='modal'; m.onclick=e=>{if(e.target===m)m.remove();};
+    m.innerHTML=`<div class="sheet"><b>${esc(t('admin'))}</b><div style="margin-top:12px">${queue.length?queue.map(q=>`<div class="card"><div class="ptext">${esc(q.post.text)}</div><div class="muted">举报 ${q.reports} 次 · ${q.removed?'已下架':'待处理'}</div>${q.removed?`<button class="btn sm" style="margin-top:8px" onclick="restorePost('${q.post.id}',this)">恢复</button>`:''}</div>`).join(''):`<div class="banner">${esc(t('noNotif'))}</div>`}</div></div>`;
+    document.body.appendChild(m);
+  }catch(e){ toast(errMsg(e)); }
+}
+async function restorePost(id,btn){ try{ await api('POST',`/api/admin/posts/${id}/restore`); btn.closest('.modal').remove(); toast('✓'); }catch(e){ toast(errMsg(e)); } }
+
+/* ==================== start ==================== */
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>真人圈 · 原型</title>
+<style>
+  :root{
+    --green:#0B6E4F; --green-l:#E8F3EE; --ink:#1a1a1a; --gray:#8a8a8a;
+    --bg:#f5f5f3; --card:#ffffff; --gold:#C9A227; --red:#D64545;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}
+  body{background:#e9e9e6;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:24px;gap:32px;flex-wrap:wrap;}
+  .side{max-width:260px;color:#555;font-size:14px;line-height:1.8;}
+  .side h1{font-size:22px;color:var(--ink);margin-bottom:8px;}
+  .side .tag{display:inline-block;background:var(--green);color:#fff;font-size:12px;padding:2px 10px;border-radius:99px;margin-bottom:14px;}
+  .phone{width:390px;height:780px;background:var(--bg);border-radius:44px;box-shadow:0 24px 60px rgba(0,0,0,.25);overflow:hidden;position:relative;border:10px solid #111;}
+  .screen{position:absolute;inset:0;display:none;flex-direction:column;overflow:hidden;}
+  .screen.active{display:flex;}
+  .topbar{padding:18px 20px 10px;background:var(--card);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #eee;}
+  .topbar .logo{font-weight:800;font-size:19px;color:var(--green);}
+  .topbar .logo span{color:var(--ink);}
+  .pill{font-size:11px;background:var(--green-l);color:var(--green);padding:3px 9px;border-radius:99px;font-weight:600;}
+  .content{flex:1;overflow-y:auto;padding:12px 14px 80px;}
+  /* tab bar */
+  .tabbar{position:absolute;bottom:0;left:0;right:0;height:64px;background:var(--card);border-top:1px solid #e5e5e5;display:flex;z-index:10;}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--gray);cursor:pointer;gap:3px;}
+  .tab .ic{font-size:20px;line-height:1;}
+  .tab.on{color:var(--green);font-weight:700;}
+  /* badges */
+  .vbadge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;vertical-align:middle;}
+  .v2{background:var(--green-l);color:var(--green);}
+  .v3{background:#FFF6DC;color:#9a7b12;}
+  .v4{background:#1a1a1a;color:var(--gold);}
+  .cam{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:#fff;background:rgba(0,0,0,.55);padding:2px 8px;border-radius:99px;backdrop-filter:blur(4px);}
+  /* feed card */
+  .card{background:var(--card);border-radius:16px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05);}
+  .chead{display:flex;align-items:center;gap:10px;padding:12px 14px;}
+  .ava{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;font-weight:700;flex-shrink:0;}
+  .cname{font-size:14px;font-weight:700;color:var(--ink);}
+  .csub{font-size:11px;color:var(--gray);margin-top:1px;}
+  .cimg{position:relative;height:200px;display:flex;align-items:flex-end;justify-content:space-between;padding:10px;color:#fff;font-size:40px;}
+  .cimg .emoji{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:64px;}
+  .ctext{padding:12px 14px;font-size:13.5px;line-height:1.6;color:#333;}
+  .cact{display:flex;gap:18px;padding:0 14px 12px;font-size:12.5px;color:var(--gray);}
+  .report{margin-left:auto;color:#bbb;cursor:pointer;}
+  .report:hover{color:var(--red);}
+  /* onboarding */
+  .ob{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;text-align:center;background:linear-gradient(180deg,#0B6E4F 0%,#0a5c42 100%);color:#fff;}
+  .ob h2{font-size:26px;margin:18px 0 10px;}
+  .ob p{font-size:14px;opacity:.85;line-height:1.8;margin-bottom:28px;}
+  .bigbtn{background:#fff;color:var(--green);border:none;font-size:16px;font-weight:800;padding:14px 44px;border-radius:99px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.2);}
+  .ob .rules{text-align:left;background:rgba(255,255,255,.1);border-radius:14px;padding:16px 18px;font-size:13px;line-height:2;margin-bottom:30px;}
+  /* verify flow */
+  .vstep{background:var(--card);border-radius:16px;padding:18px;margin-bottom:12px;display:flex;gap:14px;align-items:flex-start;}
+  .vnum{width:30px;height:30px;border-radius:50%;background:var(--green-l);color:var(--green);font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .vnum.done{background:var(--green);color:#fff;}
+  .vstep h4{font-size:14.5px;margin-bottom:4px;}
+  .vstep p{font-size:12.5px;color:var(--gray);line-height:1.6;}
+  .face{width:150px;height:150px;border-radius:50%;border:4px dashed var(--green);margin:20px auto;display:flex;align-items:center;justify-content:center;font-size:60px;background:var(--green-l);position:relative;overflow:hidden;}
+  .scanline{position:absolute;left:0;right:0;height:3px;background:var(--green);animation:scan 1.6s ease-in-out infinite;box-shadow:0 0 12px var(--green);}
+  @keyframes scan{0%,100%{top:12%}50%{top:85%}}
+  .gbtn{display:block;width:100%;background:var(--green);color:#fff;border:none;font-size:15px;font-weight:700;padding:14px;border-radius:14px;cursor:pointer;margin-top:6px;}
+  .gbtn.ghost{background:#fff;color:var(--green);border:1.5px solid var(--green);}
+  /* match */
+  .mcard{background:var(--card);border-radius:18px;padding:18px;margin-bottom:12px;}
+  .mtop{display:flex;gap:12px;align-items:center;margin-bottom:10px;}
+  .mtags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;}
+  .mtag{font-size:11px;background:var(--bg);color:#555;padding:3px 10px;border-radius:99px;}
+  .mtag.hit{background:var(--green-l);color:var(--green);font-weight:700;}
+  .mbtns{display:flex;gap:10px;margin-top:10px;}
+  .mbtns button{flex:1;padding:10px;border-radius:12px;border:none;font-size:13px;font-weight:700;cursor:pointer;}
+  .bchat{background:var(--green);color:#fff;}
+  .bvideo{background:#fff;color:var(--green);border:1.5px solid var(--green) !important;}
+  /* events */
+  .ecard{background:var(--card);border-radius:18px;overflow:hidden;margin-bottom:12px;}
+  .ebanner{height:86px;display:flex;align-items:center;justify-content:center;font-size:38px;}
+  .ebody{padding:14px;}
+  .ebody h4{font-size:15px;margin-bottom:4px;}
+  .emeta{font-size:12px;color:var(--gray);line-height:1.7;}
+  .eseats{display:flex;align-items:center;gap:6px;margin-top:8px;}
+  .seat{width:26px;height:26px;border-radius:50%;font-size:13px;display:flex;align-items:center;justify-content:center;color:#fff;}
+  .seat.empty{background:var(--bg);border:1.5px dashed #ccc;color:#bbb;}
+  .ejoin{background:var(--green);color:#fff;border:none;border-radius:99px;font-size:12px;font-weight:700;padding:7px 16px;margin-left:auto;cursor:pointer;}
+  /* profile */
+  .phead{background:linear-gradient(135deg,var(--green),#0a5c42);padding:26px 20px;color:#fff;}
+  .prow{display:flex;align-items:center;gap:14px;}
+  .pstats{display:flex;gap:0;background:var(--card);border-radius:16px;margin:14px;padding:14px 0;}
+  .pstat{flex:1;text-align:center;}
+  .pstat b{display:block;font-size:18px;color:var(--ink);}
+  .pstat span{font-size:11px;color:var(--gray);}
+  .plist{margin:0 14px;}
+  .pitem{background:var(--card);border-radius:14px;padding:14px 16px;margin-bottom:10px;font-size:14px;display:flex;justify-content:space-between;align-items:center;}
+  .pitem small{color:var(--gray);font-size:11.5px;}
+  /* toast */
+  #toast{position:absolute;top:90px;left:50%;transform:translateX(-50%) translateY(-20px);background:rgba(26,26,26,.92);color:#fff;font-size:13px;padding:10px 20px;border-radius:99px;opacity:0;transition:.3s;z-index:99;pointer-events:none;white-space:nowrap;}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .banner-ai{background:#FFF1F1;border:1px solid #f3c8c8;color:var(--red);font-size:12px;border-radius:12px;padding:10px 14px;margin-bottom:12px;line-height:1.6;}
+</style>
+</head>
+<body>
+
+<div class="side">
+  <span class="tag">可交互原型 V0.1</span>
+  <h1>真人圈 <span style="color:var(--green)">RealCircle</span></h1>
+  <p>互联网上最后一块只有真人的地方。<br><br>
+  · 每个账号 = 活体验证过的真人<br>
+  · 每条内容 = 人手创作,AI 零容忍<br>
+  · 每场活动 = 见得到面<br><br>
+  <b>点击手机里的按钮和底部标签体验。</b><br>
+  五个标签:真人圈(微博/Twitter 式内容流)、视频(抖音/TikTok/YouTube)、线下局、消息(微信+WhatsApp 加密 IM、Instagram 式 24h 直拍故事、人人网实名圈)、我的。兴趣匹配入口在「消息」页顶部。<br><br>
+  正式版为 Flutter(iOS/Android)+ React 网页三端。</p>
+</div>
+
+<div class="phone">
+  <div id="toast"></div>
+
+  <!-- 0 欢迎 -->
+  <div class="screen active" id="s-welcome">
+    <div class="ob">
+      <div style="font-size:60px">🤝</div>
+      <h2>真人圈</h2>
+      <p>这里没有 AI 美女,没有机器人,<br>没有虚拟人短剧。<br>只有 <b>1,204,533</b> 个验证过的真人。</p>
+      <div class="rules">
+        ✓ 注册必须通过活体人脸检测<br>
+        ✓ AI 生成内容一律封禁<br>
+        ✓ 一人一号,人脸去重<br>
+        ✓ 隐私承诺:核身后即删原图
+      </div>
+      <button class="bigbtn" onclick="go('s-verify')">开始真人验证 →</button>
+    </div>
+  </div>
+
+  <!-- 1 验证流程 -->
+  <div class="screen" id="s-verify">
+    <div class="topbar"><div class="logo">真人<span>验证</span></div><span class="pill">第 2 步 / 共 3 步</span></div>
+    <div class="content">
+      <div class="vstep"><div class="vnum done">✓</div><div><h4>手机号验证</h4><p>+86 138****6688 已验证 · 设备指纹已记录</p></div></div>
+      <div class="vstep" style="border:1.5px solid var(--green)">
+        <div class="vnum">2</div>
+        <div style="flex:1">
+          <h4>3D 活体人脸检测</h4>
+          <p>请正对屏幕,按提示眨眼、转头。用于确认你是真人并防止重复注册,<b>原始图像验证后立即删除</b>。</p>
+          <div class="face" id="faceBox">🙂<div class="scanline" id="scan" style="display:none"></div></div>
+          <button class="gbtn" id="liveBtn" onclick="liveness()">开始活体检测</button>
+        </div>
+      </div>
+      <div class="vstep"><div class="vnum">3</div><div><h4>实名核身(可稍后)</h4><p>解锁发起活动与创作者收益。支持公安人脸核身 / World ID。</p></div></div>
+      <button class="gbtn ghost" onclick="go('s-feed');toast('欢迎来到真人圈 🎉 已获得 L2 活体徽章')">先跳过,进入社区(仅可浏览)</button>
+    </div>
+  </div>
+
+  <!-- 2 内容流 -->
+  <div class="screen" id="s-feed">
+    <div class="topbar"><div class="logo">真人<span>圈</span></div><span class="pill">✓ 全站 0 条 AI 内容</span></div>
+    <div class="content">
+      <div class="banner-ai">🛡️ 昨日拦截 AI 生成内容 <b>1,372</b> 条,封禁违规账号 <b>89</b> 个。发现漏网之鱼?举报最高奖 ¥200。</div>
+
+      <div class="card">
+        <div class="chead">
+          <div class="ava" style="background:#5B8DEF">川</div>
+          <div><div class="cname">川子在拉萨 <span class="vbadge v4">⭐ 面验</span></div><div class="csub">2 小时前 · 拉萨</div></div>
+        </div>
+        <div class="cimg" style="background:linear-gradient(135deg,#7FB5E8,#4a7fb5)"><div class="emoji">🏔️</div><span class="cam">📷 App 直拍 · 已签名</span></div>
+        <div class="ctext">骑行第 23 天,翻过最后一个垭口。手冻僵了,照片是抖的,但每一帧都是我亲眼看到的。</div>
+        <div class="cact"><span>❤️ 2.3k</span><span>💬 412</span><span>↗️ 分享</span><span class="report" onclick="toast('已提交人工复审,感谢守护真人圈 🛡️')">⚠ 疑似AI?</span></div>
+      </div>
+
+      <div class="card">
+        <div class="chead">
+          <div class="ava" style="background:#E8956B">阿</div>
+          <div><div class="cname">阿瓜的木工房 <span class="vbadge v3">🪪 实名</span></div><div class="csub">5 小时前 · 杭州</div></div>
+        </div>
+        <div class="cimg" style="background:linear-gradient(135deg,#C9A227,#8a6d14)"><div class="emoji">🪵</div><span class="cam">📷 App 直拍 · 已签名</span></div>
+        <div class="ctext">这把椅子做了三周,手上添了两个新茧。AI 能画一万把椅子,但坐不上去。</div>
+        <div class="cact"><span>❤️ 876</span><span>💬 95</span><span>↗️ 分享</span><span class="report" onclick="toast('已提交人工复审,感谢守护真人圈 🛡️')">⚠ 疑似AI?</span></div>
+      </div>
+
+      <div class="card">
+        <div class="chead">
+          <div class="ava" style="background:#9B7EDE">小</div>
+          <div><div class="cname">小满 <span class="vbadge v2">✓ 活体</span></div><div class="csub">昨天 · 成都</div></div>
+        </div>
+        <div class="ctext" style="padding-top:0">第一次参加平台的陌生人饭局,6 个人聊到店家打烊。原来线下认识人这么简单,为什么我刷了三年交友软件?😭</div>
+        <div class="cact"><span>❤️ 1.1k</span><span>💬 230</span><span>↗️ 分享</span><span class="report" onclick="toast('已提交人工复审,感谢守护真人圈 🛡️')">⚠ 疑似AI?</span></div>
+      </div>
+    </div>
+    <div class="tabbar"></div>
+  </div>
+
+  <!-- 3 匹配 -->
+  <div class="screen" id="s-match">
+    <div class="topbar"><div class="logo">兴趣<span>匹配</span></div><span class="pill">按兴趣,不按脸</span></div>
+    <div class="content">
+      <div class="mcard">
+        <div class="mtop">
+          <div class="ava" style="background:#4EA8A0;width:48px;height:48px;font-size:22px">老</div>
+          <div><div class="cname">老周 · 31 <span class="vbadge v3">🪪 实名</span></div><div class="csub">匹配度 92% · 距离 3.2km</div></div>
+        </div>
+        <div class="mtags"><span class="mtag hit">✓ 徒步</span><span class="mtag hit">✓ 黑胶</span><span class="mtag hit">✓ 纪录片</span><span class="mtag">攀岩</span><span class="mtag">咖啡烘焙</span></div>
+        <div class="csub" style="margin-bottom:4px">"周末想找人一起走龙泉山,走得慢的那种。"</div>
+        <div class="mbtns">
+          <button class="bchat" onclick="toast('已打招呼 👋 对方是 L3 实名真人')">打招呼</button>
+          <button class="bvideo" onclick="toast('已发起 30 秒视频验真邀请 📹')">视频验真</button>
+        </div>
+      </div>
+      <div class="mcard">
+        <div class="mtop">
+          <div class="ava" style="background:#D6708B;width:48px;height:48px;font-size:22px">茉</div>
+          <div><div class="cname">茉茉 · 27 <span class="vbadge v4">⭐ 面验</span></div><div class="csub">匹配度 87% · 距离 1.1km</div></div>
+        </div>
+        <div class="mtags"><span class="mtag hit">✓ 手冲咖啡</span><span class="mtag hit">✓ 即兴戏剧</span><span class="mtag">陶艺</span><span class="mtag">city walk</span></div>
+        <div class="csub" style="margin-bottom:4px">"参加过 14 场线下局,3 个真朋友。这 App 反人性地好用。"</div>
+        <div class="mbtns">
+          <button class="bchat" onclick="toast('已打招呼 👋 对方是 L4 面验真人')">打招呼</button>
+          <button class="bvideo" onclick="toast('已发起 30 秒视频验真邀请 📹')">视频验真</button>
+        </div>
+      </div>
+      <div class="banner-ai" style="background:var(--green-l);border-color:#bcd9cd;color:var(--green)">💡 聊天受 AI 代聊检测保护:若对方用机器人回复你,我们会提醒你。</div>
+    </div>
+    <div class="tabbar"></div>
+  </div>
+
+  <!-- 4 活动 -->
+  <div class="screen" id="s-events">
+    <div class="topbar"><div class="logo">线下<span>局</span></div><span class="pill">成都 · 本周</span></div>
+    <div class="content">
+      <div class="ecard">
+        <div class="ebanner" style="background:linear-gradient(135deg,#F2C94C,#e0a82e)">🍜</div>
+        <div class="ebody">
+          <h4>周四陌生人饭局 · 玉林路苍蝇馆子</h4>
+          <div class="emeta">6/11(周四)19:00 · 人均 ¬60 · 算法按性格配桌</div>
+          <div class="eseats">
+            <div class="seat" style="background:#5B8DEF">川</div><div class="seat" style="background:#D6708B">茉</div><div class="seat" style="background:#4EA8A0">老</div><div class="seat" style="background:#E8956B">阿</div><div class="seat empty">+</div><div class="seat empty">+</div>
+            <button class="ejoin" onclick="toast('已报名 🎉 到场互扫即得「面验」进度')">报名 ¥15</button>
+          </div>
+        </div>
+      </div>
+      <div class="ecard">
+        <div class="ebanner" style="background:linear-gradient(135deg,#7FB5E8,#4a7fb5)">⛰️</div>
+        <div class="ebody">
+          <h4>周六龙泉山日出徒步 · 新手友好</h4>
+          <div class="emeta">6/13(周六)04:30 · 免费 · 限 L2 以上真人</div>
+          <div class="eseats">
+            <div class="seat" style="background:#9B7EDE">小</div><div class="seat" style="background:#4EA8A0">老</div><div class="seat empty">+</div><div class="seat empty">+</div><div class="seat empty">+</div><div class="seat empty">+</div>
+            <button class="ejoin" onclick="toast('已报名 🎉 到场互扫即得「面验」进度')">报名</button>
+          </div>
+        </div>
+      </div>
+      <div class="ecard">
+        <div class="ebanner" style="background:linear-gradient(135deg,#9B7EDE,#6c4fc1)">🎲</div>
+        <div class="ebody">
+          <h4>周日桌游下午茶 · 镋钯街</h4>
+          <div class="emeta">6/14(周日)14:00 · 人均 ¥45 · 4 人已锁定</div>
+          <div class="eseats">
+            <div class="seat" style="background:#D6708B">茉</div><div class="seat" style="background:#5B8DEF">川</div><div class="seat" style="background:#E8956B">阿</div><div class="seat" style="background:#9B7EDE">小</div><div class="seat empty">+</div>
+            <button class="ejoin" onclick="toast('已报名 🎉 到场互扫即得「面验」进度')">报名 ¥10</button>
+          </div>
+        </div>
+      </div>
+      <div class="banner-ai" style="background:var(--green-l);border-color:#bcd9cd;color:var(--green)">⭐ 线下活动中被 3 位实名用户当面确认,即可解锁最高等级「面验」徽章。</div>
+    </div>
+    <div class="tabbar"></div>
+  </div>
+
+  <!-- 5 短视频 -->
+  <div class="screen" id="s-video" style="background:#000">
+    <div class="content" style="padding:0;position:relative;">
+      <div style="height:100%;min-height:640px;background:linear-gradient(160deg,#2b3a55,#0e1420);display:flex;flex-direction:column;justify-content:flex-end;padding:18px 16px 90px;position:relative;">
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:90px;opacity:.9">🎸</div>
+        <div style="position:absolute;top:16px;left:16px;display:flex;gap:14px;color:#fff;font-size:14px;font-weight:700;">
+          <span style="opacity:.6">关注</span><span style="border-bottom:2px solid #fff;padding-bottom:3px">推荐</span><span style="opacity:.6">同城</span>
+        </div>
+        <div style="position:absolute;top:14px;right:16px;"><span class="cam">📷 App 直拍 · 已签名</span></div>
+        <div style="position:absolute;right:12px;bottom:120px;display:flex;flex-direction:column;gap:18px;align-items:center;color:#fff;font-size:11px;text-align:center;">
+          <div style="cursor:pointer" onclick="toast('已关注 ✓ 对方是 L3 实名真人')"><div class="ava" style="background:#D6708B;width:44px;height:44px;font-size:20px;border:2px solid #fff">茉</div>＋关注</div>
+          <div style="cursor:pointer">❤️<br>8.2k</div>
+          <div style="cursor:pointer">💬<br>631</div>
+          <div style="cursor:pointer" onclick="toast('已提交人工复审,感谢守护真人圈 🛡️')">⚠️<br>疑似AI</div>
+        </div>
+        <div style="color:#fff;position:relative;z-index:2;">
+          <div style="font-weight:800;font-size:15px;">@茉茉 <span class="vbadge v4">⭐ 面验</span></div>
+          <div style="font-size:13px;margin-top:6px;line-height:1.6;opacity:.95">弹错了三个和弦,但这是我练琴的第 100 天,一刀未剪。#真人练琴日记</div>
+          <div style="font-size:11px;margin-top:6px;opacity:.6">🛡️ 本视频由设备相机直拍签名 · 未检测到 AI 生成痕迹 · 美颜滤镜:未使用</div>
+        </div>
+      </div>
+    </div>
+    <div class="tabbar"></div>
+  </div>
+
+  <!-- 6 消息 -->
+  <div class="screen" id="s-chat">
+    <div class="topbar"><div class="logo">消<span>息</span></div><span class="pill">🔒 端到端加密 · 全真人</span></div>
+    <div class="content">
+      <!-- Instagram式 24小时真人故事 -->
+      <div style="display:flex;gap:14px;padding:6px 2px 14px;overflow-x:auto;">
+        <div style="text-align:center;font-size:10.5px;color:var(--gray);flex-shrink:0;cursor:pointer" onclick="toast('故事只能 App 直拍,24 小时后消失 📷')">
+          <div class="ava" style="background:var(--bg);border:2px dashed var(--green);width:52px;height:52px;font-size:22px;color:var(--green);margin:0 auto 4px">＋</div>发故事
+        </div>
+        <div style="text-align:center;font-size:10.5px;color:#333;flex-shrink:0;cursor:pointer" onclick="toast('茉茉的直拍故事 · 22 小时后消失')">
+          <div class="ava" style="background:#D6708B;border:2.5px solid var(--green);width:52px;height:52px;font-size:22px;margin:0 auto 4px">茉</div>茉茉
+        </div>
+        <div style="text-align:center;font-size:10.5px;color:#333;flex-shrink:0;cursor:pointer" onclick="toast('川子的直拍故事 · 9 小时后消失')">
+          <div class="ava" style="background:#5B8DEF;border:2.5px solid var(--green);width:52px;height:52px;font-size:22px;margin:0 auto 4px">川</div>川子
+        </div>
+        <div style="text-align:center;font-size:10.5px;color:#333;flex-shrink:0;cursor:pointer" onclick="toast('老周的直拍故事 · 3 小时后消失')">
+          <div class="ava" style="background:#4EA8A0;border:2.5px solid var(--green);width:52px;height:52px;font-size:22px;margin:0 auto 4px">老</div>老周
+        </div>
+        <div style="text-align:center;font-size:10.5px;color:#aaa;flex-shrink:0;cursor:pointer" onclick="toast('小满的故事已看过')">
+          <div class="ava" style="background:#9B7EDE;border:2.5px solid #ddd;width:52px;height:52px;font-size:22px;margin:0 auto 4px;opacity:.55">小</div>小满
+        </div>
+      </div>
+      <div class="pitem" style="background:var(--green-l);cursor:pointer" onclick="go('s-match')"><span>🤝 兴趣匹配 · 今日为你找到 3 位同好</span><small>去看看 ›</small></div>
+      <div class="card" style="border-radius:14px">
+        <div class="chead" style="cursor:pointer" onclick="toast('打开会话(原型未实现)')">
+          <div class="ava" style="background:#F2C94C">局</div>
+          <div style="flex:1"><div class="cname">周四饭局·玉林路(群 4)</div><div class="csub">老周:我提前去占座,都是真人勿放鸽子 😤</div></div>
+          <small style="color:var(--gray)">19:02</small>
+        </div>
+      </div>
+      <div class="card" style="border-radius:14px">
+        <div class="chead" style="cursor:pointer" onclick="toast('打开会话(原型未实现)')">
+          <div class="ava" style="background:#4EA8A0">老</div>
+          <div style="flex:1"><div class="cname">老周 <span class="vbadge v3">🪪 实名</span> <span style="font-size:10px;color:var(--gray)">🔒</span></div><div class="csub">🎤 语音消息 0:23 · 周末龙泉山走起?</div></div>
+          <small style="color:var(--gray)">14:36</small>
+        </div>
+      </div>
+      <div class="card" style="border-radius:14px">
+        <div class="chead" style="cursor:pointer" onclick="toast('打开会话(原型未实现)')">
+          <div class="ava" style="background:#D6708B">茉</div>
+          <div style="flex:1"><div class="cname">茉茉 <span class="vbadge v4">⭐ 面验</span> <span style="font-size:10px;color:var(--green)">已视频验真 ✓</span></div><div class="csub">上次桌游局你输的奶茶什么时候请 🧋</div></div>
+          <small style="color:var(--gray)">昨天</small>
+        </div>
+      </div>
+      <div class="card" style="border-radius:14px">
+        <div class="chead" style="cursor:pointer" onclick="toast('打开会话(原型未实现)')">
+          <div class="ava" style="background:#9B7EDE">班</div>
+          <div style="flex:1"><div class="cname">XX 大学 2018 级摄影社(群 23)</div><div class="csub">小满:十年聚会定在 7 月,实名圈接龙报名中</div></div>
+          <small style="color:var(--gray)">昨天</small>
+        </div>
+      </div>
+      <div class="banner-ai" style="background:var(--green-l);border-color:#bcd9cd;color:var(--green)">🔒 会话端到端加密,平台也无法读取;加密的两端均为活体验证真人。🛡️ AI 代聊防护已开启。</div>
+    </div>
+    <div class="tabbar"></div>
+  </div>
+
+  <!-- 7 我的 -->
+  <div class="screen" id="s-me">
+    <div class="phead">
+      <div class="prow">
+        <div class="ava" style="background:rgba(255,255,255,.25);width:56px;height:56px;font-size:26px">我</div>
+        <div>
+          <div style="font-size:18px;font-weight:800">Tim <span class="vbadge v2">✓ 活体</span></div>
+          <div style="font-size:12px;opacity:.8;margin-top:3px">真人编号 #1204534 · 下次活体抽查:62 天后</div>
+        </div>
+      </div>
+    </div>
+    <div class="pstats">
+      <div class="pstat"><b>12</b><span>直拍内容</span></div>
+      <div class="pstat"><b>3</b><span>线下见面</span></div>
+      <div class="pstat"><b>2/3</b><span>面验进度</span></div>
+      <div class="pstat"><b>¥50</b><span>举报奖励</span></div>
+    </div>
+    <div class="plist">
+      <div class="pitem" onclick="toast('进入实名核身流程(原型未实现)')"><span>🪪 升级 L3 实名认证</span><small>解锁发起活动 ›</small></div>
+      <div class="pitem"><span>🛡️ 我的验证记录</span><small>活体 ✓ 5/12 通过 ›</small></div>
+      <div class="pitem"><span>🔒 隐私中心</span><small>人脸原图:已删除 ›</small></div>
+      <div class="pitem"><span>🏹 猎手计划(举报 AI 内容)</span><small>命中 1 次 ›</small></div>
+    </div>
+    <div class="tabbar"></div>
+  </div>
+</div>
+
+<script>
+const tabs = [
+  {id:'s-feed', ic:'🏠', label:'真人圈'},
+  {id:'s-video', ic:'🎬', label:'视频'},
+  {id:'s-events', ic:'📍', label:'线下局'},
+  {id:'s-chat', ic:'💬', label:'消息'},
+  {id:'s-me', ic:'👤', label:'我的'},
+];
+document.querySelectorAll('.tabbar').forEach(bar=>{
+  bar.innerHTML = tabs.map(t=>`<div class="tab" data-t="${t.id}" onclick="go('${t.id}')"><span class="ic">${t.ic}</span>${t.label}</div>`).join('');
+});
+function go(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on', t.dataset.t===id));
+}
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+function liveness(){
+  const btn = document.getElementById('liveBtn'), face = document.getElementById('faceBox'), scan = document.getElementById('scan');
+  btn.disabled = true; btn.textContent = '检测中…请眨眼'; scan.style.display='block';
+  setTimeout(()=>{ btn.textContent='检测中…请缓慢左转头'; face.firstChild.textContent='🙂'; }, 1400);
+  setTimeout(()=>{
+    scan.style.display='none'; face.style.borderStyle='solid'; face.firstChild && (face.childNodes[0].textContent='✅');
+    btn.textContent='✓ 活体验证通过 · 原图已删除'; btn.style.background='var(--gold)';
+    toast('恭喜!你现在是 L2 认证真人 ✓');
+    setTimeout(()=>{ go('s-feed'); }, 1600);
+  }, 3000);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+node_modules
+data.json
+*.tmp
+.git
+.env
+test.js
+storage.test.js

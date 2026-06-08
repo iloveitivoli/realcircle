@@ -1,0 +1,27 @@
+name: realcircle
+description: "真人圈 RealCircle — 100% 真人社交平台(Android + iOS)"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0                 # REST 调用,对接同一后端
+  shared_preferences: ^2.2.0  # 本地保存登录 token
+  intl: ^0.19.0               # 多语言/RTL
+  web_socket_channel: ^3.0.0  # 实时私信/通知(WebSocket,轮询为降级兜底)
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  # 国际化:中 / 英 / 阿(阿拉伯语自动 RTL)
+  generate: false

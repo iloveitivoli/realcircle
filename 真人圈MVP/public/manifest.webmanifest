@@ -1,0 +1,12 @@
+{
+  "name": "真人圈 RealCircle",
+  "short_name": "真人圈",
+  "description": "100% 真人社交平台,拒绝 AI 生成内容与虚拟人",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B6E4F",
+  "theme_color": "#0B6E4F",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
