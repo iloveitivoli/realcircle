@@ -269,22 +269,34 @@ function connectWS(){
 function disconnectWS(){ const w=ws; ws=null; if(w){ try{ w.onclose=null; w.close(); }catch{} } }
 
 /* ==================== 端到端加密(ECDH P-256 + AES-GCM,私钥仅存本机) ==================== */
-let _e2ePriv=null, _chatPub=null; const _e2eShareCache={};
+let _e2ePriv=null, _signPriv=null, _chatPub=null; const _e2eShareCache={};
 const _b64=b=>btoa(String.fromCharCode(...new Uint8Array(b)));
 const _unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 async function e2eEnsure(){
   if(!token || !(crypto&&crypto.subtle)) return;
   let priv=localStorage.getItem('e2e_priv'), pub=localStorage.getItem('e2e_pub');
-  if(!priv){
-    try{
+  let sPriv=localStorage.getItem('sign_priv'), sPub=localStorage.getItem('sign_pub');
+  let needUpload=false;
+  if(!priv){ try{
       const kp=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveKey']);
       pub=JSON.stringify(await crypto.subtle.exportKey('jwk',kp.publicKey));
       priv=JSON.stringify(await crypto.subtle.exportKey('jwk',kp.privateKey));
-      localStorage.setItem('e2e_priv',priv); localStorage.setItem('e2e_pub',pub);
-      await api('POST','/api/me/pubkey',{pubKey:pub});
-    }catch{ return; }
-  } else if(pub && me && !me.pubKey){ try{ await api('POST','/api/me/pubkey',{pubKey:pub}); }catch{} }
+      localStorage.setItem('e2e_priv',priv); localStorage.setItem('e2e_pub',pub); needUpload=true;
+    }catch{} }
+  if(!sPriv){ try{   // 直拍设备签名密钥(ECDSA)
+      const kp=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
+      sPub=JSON.stringify(await crypto.subtle.exportKey('jwk',kp.publicKey));
+      sPriv=JSON.stringify(await crypto.subtle.exportKey('jwk',kp.privateKey));
+      localStorage.setItem('sign_priv',sPriv); localStorage.setItem('sign_pub',sPub); needUpload=true;
+    }catch{} }
+  if(needUpload || (me && !me.pubKey)){ try{ await api('POST','/api/me/pubkey',{pubKey:pub,signKey:sPub}); }catch{} }
   try{ _e2ePriv=await crypto.subtle.importKey('jwk',JSON.parse(priv),{name:'ECDH',namedCurve:'P-256'},false,['deriveKey']); }catch{ _e2ePriv=null; }
+  try{ _signPriv=await crypto.subtle.importKey('jwk',JSON.parse(sPriv),{name:'ECDSA',namedCurve:'P-256'},false,['sign']); }catch{ _signPriv=null; }
+}
+async function signData(str){
+  if(!_signPriv) await e2eEnsure();
+  if(!_signPriv) return null;
+  try{ return _b64(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},_signPriv,new TextEncoder().encode(str))); }catch{ return null; }
 }
 async function e2eKey(otherPub){
   if(!otherPub) return null;
@@ -425,7 +437,8 @@ async function renderFeed(){
       <div id="pmedia"></div>
       <input type="file" id="pfile" accept="image/*,video/*" style="display:none" onchange="pickMedia(this)">
       <div class="row" style="margin-top:6px;">
-        <button class="tbtn" title="${esc(t('addMedia'))}" onclick="document.getElementById('pfile').click()" style="font-size:19px;padding:4px 8px;">📷</button>
+        <button class="tbtn" title="直拍(设备签名)" onclick="openCamera()" style="font-size:19px;padding:4px 8px;">🎥</button>
+        <button class="tbtn" title="${esc(t('addMedia'))}" onclick="document.getElementById('pfile').click()" style="font-size:19px;padding:4px 8px;">🖼️</button>
         <label class="muted"><input type="checkbox" id="pdirect" checked style="width:auto;margin-inline-end:5px;">${esc(t('direct'))}</label>
         <span class="spacer"></span>
         <button class="btn sm" onclick="doPost(false)">${esc(t('publish'))}</button>
@@ -460,7 +473,7 @@ function postCard(p){
     ${p.media?(p.mediaType==='video'
       ? `<video src="${p.media}" controls playsinline preload="metadata" style="width:100%;border-radius:12px;background:#000;margin-bottom:8px;max-height:440px"></video>`
       : `<img src="${p.media}" loading="lazy" onclick="window.open('${p.media}')" style="width:100%;border-radius:12px;margin-bottom:8px;cursor:pointer">`):''}
-    ${p.direct?`<div style="margin-bottom:8px;"><span class="cam">📷 App 直拍 · 已签名</span></div>`:''}
+    ${p.signed?`<div style="margin-bottom:8px;"><span class="cam">🛡️ 设备签名 · 已验证直拍</span></div>`:(p.direct&&p.media?`<div style="margin-bottom:8px;"><span class="cam">📷 直拍</span></div>`:'')}
     <div class="acts">
       <button class="${p.liked?'liked':''}" onclick="like('${p.id}',this)">${p.liked?'❤️':'🤍'} <i style="font-style:normal">${p.likes}</i></button>
       <button onclick="openComments('${p.id}')">💬 ${p.comments}</button>
@@ -495,6 +508,59 @@ async function doPost(story, storyText){
   try{ await api('POST','/api/posts',body);
     toast('✓'); if(!story){$('#ptext').value=''; clearMedia();} renderFeed(); }
   catch(e){ toast(errMsg(e)); }
+}
+/* ==================== 直拍 + 设备签名(相机实时捕获) ==================== */
+let _camStream=null, _camRec=null, _camChunks=[], _camT=null;
+async function openCamera(){
+  if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)){ toast('当前环境不支持相机'); return; }
+  const m=document.createElement('div'); m.className='modal'; m.onclick=e=>{ if(e.target===m) closeCamera(m); };
+  m.innerHTML=`<div class="sheet" style="padding:0;overflow:hidden">
+    <div style="position:relative;background:#000">
+      <video id="camView" autoplay playsinline muted style="width:100%;max-height:58vh;object-fit:contain;background:#000;display:block"></video>
+      <div id="camRecDot" style="display:none;position:absolute;top:10px;left:10px;color:#fff;background:rgba(214,69,69,.92);padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700">● <span id="camTime">0</span>s</div>
+    </div>
+    <div style="padding:14px">
+      <div class="muted" style="text-align:center;margin-bottom:10px">🛡️ 实时直拍由设备签名,优先分发;相册上传不签名</div>
+      <div style="display:flex;gap:10px">
+        <button class="btn" id="camShot" onclick="camShot()">📷 拍照</button>
+        <button class="btn ghost" id="camVid" onclick="camToggleRec(this)">🎬 录像</button>
+      </div>
+      <button class="muted" onclick="closeCamera(this.closest('.modal'))" style="background:none;border:none;cursor:pointer;width:100%;padding:12px 0 2px">取消</button>
+    </div></div>`;
+  document.body.appendChild(m);
+  try{ _camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true}); const v=$('#camView'); if(v) v.srcObject=_camStream; }
+  catch(e){ toast('无法访问相机: '+e.message); closeCamera(m); }
+}
+function closeCamera(m){ try{ if(_camRec&&_camRec.state==='recording') _camRec.stop(); }catch{} clearInterval(_camT);
+  if(_camStream){ _camStream.getTracks().forEach(t=>t.stop()); _camStream=null; } _camRec=null; if(m) m.remove(); }
+async function camShot(){
+  const v=$('#camView'); if(!v||!v.videoWidth) return;
+  const c=document.createElement('canvas'); c.width=v.videoWidth; c.height=v.videoHeight;
+  c.getContext('2d').drawImage(v,0,0);
+  c.toBlob(b=>{ if(b) uploadSignedMedia(b,'image/jpeg','image'); }, 'image/jpeg', 0.9);
+}
+function camToggleRec(btn){
+  if(_camRec&&_camRec.state==='recording'){ _camRec.stop(); return; }
+  if(!_camStream) return;
+  _camChunks=[];
+  try{ _camRec=new MediaRecorder(_camStream,{mimeType:'video/webm'}); }catch{ _camRec=new MediaRecorder(_camStream); }
+  _camRec.ondataavailable=e=>{ if(e.data&&e.data.size) _camChunks.push(e.data); };
+  _camRec.onstop=()=>{ clearInterval(_camT); const d=$('#camRecDot'); if(d)d.style.display='none';
+    const blob=new Blob(_camChunks,{type:'video/webm'}); uploadSignedMedia(blob,'video/webm','video'); };
+  _camRec.start(); btn.textContent='⏹ 停止';
+  let n=0; const d=$('#camRecDot'); if(d)d.style.display='block'; const tEl=$('#camTime'); if(tEl)tEl.textContent='0';
+  _camT=setInterval(()=>{ n++; const el=$('#camTime'); if(el)el.textContent=n; if(n>=15&&_camRec.state==='recording') _camRec.stop(); },1000);
+}
+async function uploadSignedMedia(blob, contentType, type){
+  toast(t('uploading'));
+  try{
+    const buf=await blob.arrayBuffer();
+    const r=await fetch('/api/upload',{method:'PUT',headers:{'Content-Type':contentType,'Authorization':'Bearer '+token},body:buf});
+    const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'上传失败'),{code:d.error});
+    const ts=Date.now(); const sig=await signData(d.url+'|'+ts);   // 设备签名:媒体URL|时间
+    await api('POST','/api/posts',{text:'',kind:type==='video'?'video':'text',direct:true,media:d.url,mediaType:d.type,signature:sig,signTs:ts});
+    closeCamera(document.querySelector('.modal')); toast('✓ 直拍已发布 · 设备已签名'); go('feed');
+  }catch(e){ toast(errMsg(e)); }
 }
 async function like(id,btn){ try{ const r=await api('POST',`/api/posts/${id}/like`); btn.classList.toggle('liked',r.liked); btn.firstChild.textContent=(r.liked?'❤️':'🤍')+' '; btn.querySelector('i').textContent=r.likes; }catch(e){ toast(errMsg(e)); } }
 async function report(id){ try{ const r=await api('POST',`/api/posts/${id}/report`); toast(r.message); if(r.autoRemoved)render(); }catch(e){ toast(errMsg(e)); } }

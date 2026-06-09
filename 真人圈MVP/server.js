@@ -214,6 +214,16 @@ function validPhone(dial, phone) {
   return phone.length >= 5 && phone.length <= 14;       // 通用 E.164 本地段
 }
 function findUserByPhone(dial, phone) { return DB.users.find(x => x.phone === phone && normDial(x.dial) === dial); }
+/* 直拍设备签名验证(ECDSA P-256):客户端用设备私钥对内容签名,服务端用其公钥验真,
+ * 证明媒体由本设备实时拍摄并签发,而非上传的 AI 生成/搬运内容。 */
+async function verifyDeviceSign(signKeyJwk, sigB64, dataStr) {
+  try {
+    if (!signKeyJwk || !sigB64) return false;
+    const key = await crypto.webcrypto.subtle.importKey('jwk', JSON.parse(signKeyJwk), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    const sig = Uint8Array.from(Buffer.from(sigB64, 'base64'));
+    return await crypto.webcrypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, sig, new TextEncoder().encode(dataStr));
+  } catch { return false; }
+}
 
 /* ============================ 路由 ============================ */
 const routes = {
@@ -281,12 +291,13 @@ const routes = {
     if (bio !== undefined) { if (bio.length > 200) return err(res, 400, '简介过长'); u.bio = bio; }
     store.save(); json(res, 200, { user: pubUser(u, u) });
   },
-  /* ---- E2E:上传本人公钥(端到端加密私信) ---- */
+  /* ---- 上传本人公钥:pubKey(E2E 加密) + signKey(直拍设备签名) ---- */
   'POST /api/me/pubkey': async (req, res) => {
     const u = authUser(req); if (!u) return err(res, 401, '请先登录');
-    const { pubKey } = await readBody(req);
-    if (typeof pubKey !== 'string' || pubKey.length > 2000) return err(res, 400, '公钥不合法');
-    u.pubKey = pubKey; store.save(); json(res, 200, { ok: true });
+    const { pubKey, signKey } = await readBody(req);
+    if (pubKey !== undefined) { if (typeof pubKey !== 'string' || pubKey.length > 2000) return err(res, 400, '公钥不合法'); u.pubKey = pubKey; }
+    if (signKey !== undefined) { if (typeof signKey !== 'string' || signKey.length > 2000) return err(res, 400, '签名公钥不合法'); u.signKey = signKey; }
+    store.save(); json(res, 200, { ok: true });
   },
 
   /* ---- 活体验证(provider 抽象;mock/facetec/iproov,见 liveness.js,仅存特征哈希) ---- */
@@ -332,7 +343,8 @@ const routes = {
     const u = authUser(req); if (!u) return err(res, 401, '请先登录');
     if (u.level < 2) return err(res, 403, '发布内容需要 L2 活体验证');
     if (!rateLimit('post:' + u.id, true)) return err(res, 429, '发布过于频繁,请稍后');
-    const { text, kind, direct, story, media, mediaType } = await readBody(req);
+    const body = await readBody(req);
+    const { text, kind, direct, story, media, mediaType } = body;
     // 媒体只接受本平台上传返回的 /uploads/ 路径(防注入外链)
     const mediaUrl = (typeof media === 'string' && /^\/uploads\/[\w.-]+$/.test(media)) ? media : null;
     const mType = mediaUrl ? (['video', 'image'].includes(mediaType) ? mediaType : 'image') : null;
@@ -341,8 +353,13 @@ const routes = {
     if (txt.length > 2000) return err(res, 400, '内容过长');
     if (txt && detectAIText(txt)) return err(res, 422, 'AI_BLOCKED'); // 命中AI检测,拒绝
     const realKind = mType === 'video' ? 'video' : (['text', 'video'].includes(kind) ? kind : 'text');
+    // 直拍设备签名:对 媒体URL|签名时间 验签,通过则标记 signed(已验证直拍)
+    let signed = false;
+    if (mediaUrl && body.signature && u.signKey) {
+      signed = await verifyDeviceSign(u.signKey, body.signature, mediaUrl + '|' + (body.signTs || ''));
+    }
     const p = { id: store.nid(), uid: u.id, text: txt, kind: realKind,
-      media: mediaUrl, mediaType: mType,
+      media: mediaUrl, mediaType: mType, signed,
       direct: direct !== false, likes: [], reports: [], removed: false, story: !!story,
       ts: Date.now(), expire: story ? Date.now() + CFG.STORY_TTL_MS : 0 };
     DB.posts.push(p); store.save();
@@ -576,7 +593,7 @@ function adminOf(req) { const u = authUser(req); return (u && u.phone === CFG.AD
 function serializePost(p, viewer) {
   return {
     id: p.id, text: p.text, kind: p.kind, direct: p.direct, story: p.story, ts: p.ts,
-    media: p.media || null, mediaType: p.mediaType || null,
+    media: p.media || null, mediaType: p.mediaType || null, signed: !!p.signed,
     likes: p.likes.length, liked: viewer ? p.likes.includes(viewer.id) : false,
     comments: DB.comments.filter(c => c.pid === p.id && !c.removed).length,
     author: pubUser(U(p.uid), viewer), mine: viewer ? p.uid === viewer.id : false,
