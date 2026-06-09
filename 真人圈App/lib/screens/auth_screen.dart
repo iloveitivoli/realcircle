@@ -1,7 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../api.dart';
 import '../i18n.dart';
 import '../theme.dart';
+
+const kDialCodes = [
+  ['86', '🇨🇳 +86'], ['852', '🇭🇰 +852'], ['886', '🇹🇼 +886'], ['971', '🇦🇪 +971'],
+  ['1', '🇺🇸 +1'], ['44', '🇬🇧 +44'], ['65', '🇸🇬 +65'], ['81', '🇯🇵 +81'],
+  ['82', '🇰🇷 +82'], ['66', '🇹🇭 +66'], ['84', '🇻🇳 +84'], ['60', '🇲🇾 +60'],
+  ['62', '🇮🇩 +62'], ['91', '🇮🇳 +91'], ['61', '🇦🇺 +61'], ['966', '🇸🇦 +966'],
+];
 
 class AuthScreen extends StatefulWidget {
   final VoidCallback onDone;
@@ -14,8 +22,36 @@ class _AuthScreenState extends State<AuthScreen> {
   final _phone = TextEditingController();
   final _pwd = TextEditingController();
   final _nick = TextEditingController();
+  final _code = TextEditingController();
+  String _dial = '86';
+  int _cd = 0; // 验证码倒计时
+  Timer? _cdTimer;
   bool _busy = false;
   final l = L10n.instance;
+
+  String _tx(String zh, String en, String ar) => l.lang == 'en' ? en : (l.lang == 'ar' ? ar : zh);
+
+  @override
+  void dispose() {
+    _cdTimer?.cancel();
+    _phone.dispose(); _pwd.dispose(); _nick.dispose(); _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendCode() async {
+    if (_phone.text.trim().isEmpty) { toast(context, l.t('phone')); return; }
+    try {
+      final code = await Api.sendSms(_dial, _phone.text.trim());
+      if (code != null) { _code.text = code; if (mounted) toast(context, '${_tx('演示验证码', 'Demo code', 'رمز تجريبي')}: $code'); }
+      else if (mounted) toast(context, _tx('验证码已发送', 'Code sent', 'تم الإرسال'));
+      setState(() => _cd = 60);
+      _cdTimer?.cancel();
+      _cdTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (_cd <= 1) { t.cancel(); if (mounted) setState(() => _cd = 0); }
+        else if (mounted) setState(() => _cd--);
+      });
+    } catch (e) { if (mounted) toast(context, _errText(e)); }
+  }
 
   String _errText(Object e) =>
       (e is ApiException && e.code == 'AI_BLOCKED') ? l.t('aiblocked') : e.toString();
@@ -61,17 +97,36 @@ class _AuthScreenState extends State<AuthScreen> {
                     child: Padding(
                       padding: const EdgeInsets.all(22),
                       child: Column(children: [
-                        TextField(controller: _phone, keyboardType: TextInputType.phone, maxLength: 11,
-                            decoration: InputDecoration(hintText: l.t('phone'), counterText: '')),
+                        Row(children: [
+                          DropdownButton<String>(
+                            value: _dial,
+                            underline: const SizedBox(),
+                            items: kDialCodes.map((c) => DropdownMenuItem(value: c[0], child: Text(c[1], style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
+                            onChanged: (v) => setState(() => _dial = v ?? '86'),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(child: TextField(controller: _phone, keyboardType: TextInputType.phone, maxLength: 14,
+                              decoration: InputDecoration(hintText: l.t('phone'), counterText: ''))),
+                        ]),
                         const SizedBox(height: 10),
                         TextField(controller: _pwd, obscureText: true,
                             decoration: InputDecoration(hintText: l.t('pwd'))),
                         const SizedBox(height: 10),
                         TextField(controller: _nick, maxLength: 20,
                             decoration: InputDecoration(hintText: l.t('nick'), counterText: '')),
+                        const SizedBox(height: 10),
+                        Row(children: [
+                          Expanded(child: TextField(controller: _code, keyboardType: TextInputType.number, maxLength: 6,
+                              decoration: InputDecoration(hintText: _tx('短信验证码', 'SMS code', 'رمز التحقق'), counterText: ''))),
+                          const SizedBox(width: 8),
+                          OutlinedButton(
+                            onPressed: (_busy || _cd > 0) ? null : _sendCode,
+                            child: Text(_cd > 0 ? '${_cd}s' : _tx('获取验证码', 'Get code', 'إرسال الرمز')),
+                          ),
+                        ]),
                         const SizedBox(height: 6),
                         SizedBox(width: double.infinity, child: ElevatedButton(
-                          onPressed: _busy ? null : () => _run(() => Api.register(_phone.text, _pwd.text, _nick.text)),
+                          onPressed: _busy ? null : () => _run(() => Api.register(_phone.text.trim(), _pwd.text, _nick.text, dial: _dial, code: _code.text.trim())),
                           child: Text(l.t('toReg')),
                         )),
                         const SizedBox(height: 8),
@@ -81,7 +136,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
                           ),
-                          onPressed: _busy ? null : () => _run(() => Api.login(_phone.text, _pwd.text)),
+                          onPressed: _busy ? null : () => _run(() => Api.login(_phone.text.trim(), _pwd.text, dial: _dial)),
                           child: Text(l.t('have'), style: const TextStyle(fontWeight: FontWeight.bold)),
                         )),
                         const SizedBox(height: 10),

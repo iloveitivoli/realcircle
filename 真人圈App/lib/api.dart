@@ -61,19 +61,27 @@ class Api {
     return data;
   }
 
-  // ---- 账号 ----
-  static Future<Map<String, dynamic>> register(String phone, String pwd, String nick) async {
-    final d = await _req('POST', '/api/register', {'phone': phone, 'password': pwd, 'nickname': nick});
+  // ---- 账号(多国区号 dial + 短信验证码 code) ----
+  static Future<Map<String, dynamic>> register(String phone, String pwd, String nick,
+      {String dial = '86', String? code}) async {
+    final d = await _req('POST', '/api/register',
+        {'dial': dial, 'phone': phone, 'password': pwd, 'nickname': nick, if (code != null) 'code': code});
     await _setToken(d['token']);
     me = d['user'];
     return d;
   }
 
-  static Future<Map<String, dynamic>> login(String phone, String pwd) async {
-    final d = await _req('POST', '/api/login', {'phone': phone, 'password': pwd});
+  static Future<Map<String, dynamic>> login(String phone, String pwd, {String dial = '86'}) async {
+    final d = await _req('POST', '/api/login', {'dial': dial, 'phone': phone, 'password': pwd});
     await _setToken(d['token']);
     me = d['user'];
     return d;
+  }
+
+  // 发送短信验证码;mock+开发模式会回显 devCode 便于自测
+  static Future<String?> sendSms(String dial, String phone) async {
+    final d = await _req('POST', '/api/sms/send', {'dial': dial, 'phone': phone});
+    return d['devCode'] as String?;
   }
 
   static Future<void> logout() async {
@@ -120,8 +128,26 @@ class Api {
 
   static Future<List> stories() async => (await _req('GET', '/api/stories'))['stories'] as List;
 
-  static Future<void> createPost(String text, {String kind = 'text', bool direct = true, bool story = false}) =>
-      _req('POST', '/api/posts', {'text': text, 'kind': kind, 'direct': direct, 'story': story});
+  static Future<void> createPost(String text,
+          {String kind = 'text', bool direct = true, bool story = false, String? media, String? mediaType}) =>
+      _req('POST', '/api/posts', {
+        'text': text, 'kind': kind, 'direct': direct, 'story': story,
+        if (media != null) 'media': media, if (mediaType != null) 'mediaType': mediaType,
+      });
+
+  // 二进制流式上传图片/视频,返回 {url, type}
+  static Future<Map<String, dynamic>> uploadMedia(List<int> bytes, String contentType) async {
+    final res = await http.put(Uri.parse('$baseUrl/api/upload'),
+        headers: {'Content-Type': contentType, if (_token != null) 'Authorization': 'Bearer $_token'},
+        body: bytes).timeout(const Duration(seconds: 60));
+    final data = res.body.isNotEmpty ? jsonDecode(res.body) : {};
+    if (res.statusCode >= 400) {
+      throw ApiException(res.statusCode, (data['error'] ?? 'HTTP ${res.statusCode}').toString());
+    }
+    return Map<String, dynamic>.from(data);
+  }
+
+  static String mediaUrl(String path) => path.startsWith('http') ? path : '$baseUrl$path';
 
   static Future<Map> like(String id) async => await _req('POST', '/api/posts/$id/like');
   static Future<Map> report(String id) async => await _req('POST', '/api/posts/$id/report');
