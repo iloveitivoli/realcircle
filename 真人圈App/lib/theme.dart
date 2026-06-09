@@ -1,23 +1,30 @@
 import 'package:flutter/material.dart';
 
-const kGreen = Color(0xFF0B6E4F);
-const kGreenD = Color(0xFF0A5C42);
-const kGreenL = Color(0xFFE8F3EE);
-const kGold = Color(0xFFC9A227);
-const kInk = Color(0xFF16181C);
-const kGray = Color(0xFF8A9099);
-const kBg = Color(0xFFF3F4F3);
+// 暖色编辑感配色(与 Web 端一致)
+const kGreen = Color(0xFF0C6B4F);
+const kGreenD = Color(0xFF084C38);
+const kGreenL = Color(0xFFE8F1EA);
+const kGold = Color(0xFFBF9B30);
+const kInk = Color(0xFF1D1B16); // 暖墨
+const kGray = Color(0xFF8D8576); // 暖灰
+const kBg = Color(0xFFF6F1E6); // 暖纸张
+const kCard = Color(0xFFFFFDF8); // 暖白卡片
+const kLine = Color(0xFFECE3D3); // 暖描边
+
+// 衬线展示字体回退栈(标题/Logo;设备无则优雅回退到系统默认)
+const kSerifFallback = ['Songti SC', 'Source Han Serif SC', 'Noto Serif SC', 'serif'];
 
 ThemeData buildTheme() {
   return ThemeData(
     useMaterial3: true,
     scaffoldBackgroundColor: kBg,
-    colorScheme: ColorScheme.fromSeed(seedColor: kGreen, primary: kGreen),
+    colorScheme: ColorScheme.fromSeed(seedColor: kGreen, primary: kGreen, surface: kCard),
     appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.white,
+      backgroundColor: kCard,
       foregroundColor: kInk,
       elevation: 0.5,
       centerTitle: false,
+      titleTextStyle: TextStyle(color: kInk, fontSize: 19, fontWeight: FontWeight.w800, fontFamilyFallback: kSerifFallback),
     ),
     // Card 样式在各 Card() 处单独设置,避免不同 Flutter 版本 CardTheme/CardThemeData 类型差异
     elevatedButtonTheme: ElevatedButtonThemeData(
@@ -26,20 +33,20 @@ ThemeData buildTheme() {
         foregroundColor: Colors.white,
         elevation: 0,
         padding: const EdgeInsets.symmetric(vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
       ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: Colors.white,
+      fillColor: kCard,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFE8E8E6)),
+        borderSide: const BorderSide(color: kLine),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFE8E8E6)),
+        borderSide: const BorderSide(color: kLine),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -52,9 +59,9 @@ ThemeData buildTheme() {
 /// 真人验证等级徽章
 Widget levelBadge(int level) {
   const map = {
-    1: ['L1', Color(0xFFEEEEEE), Color(0xFF888888)],
+    1: ['L1', Color(0xFFEFE9DC), Color(0xFF9A9182)],
     2: ['✓', kGreenL, kGreen],
-    3: ['🪪', Color(0xFFFFF6DC), Color(0xFF9A7B12)],
+    3: ['🪪', Color(0xFFFBF3DA), Color(0xFF9A7B12)],
     4: ['⭐', kInk, kGold],
   };
   final m = map[level] ?? map[1]!;
@@ -80,7 +87,7 @@ Widget avatar(String name, {double size = 40}) {
     radius: size / 2,
     backgroundColor: avatarColor(n),
     child: Text(n.characters.first,
-        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: size * 0.42)),
+        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: size * 0.42, fontFamilyFallback: kSerifFallback)),
   );
 }
 
