@@ -62,7 +62,14 @@ cd 真人圈App && flutter create . && flutter pub get && flutter run
 | 存储层 | ✅ 可插拔驱动:JSON(零依赖)/ PostgreSQL(真实表),一键切换 |
 | 真人验证活体 | ✅ provider 抽象:mock / FaceTec / iProov,生产切换只改环境变量 |
 | 实时私信 | ✅ 零依赖 WebSocket 实时推送,轮询为降级兜底 |
-| 真人验证活体 SDK 对接 | ⚠️ 接入点与请求契约已就绪,需填厂商密钥与真实端点 |
-| 消息端到端加密 / 直拍设备签名 / iOS 签名打包 | ⬜ 待办(详见 MVP README 生产化路线) |
+| 端到端加密私信 | ✅ ECDH P-256 + AES-GCM,服务器零知识(只存密文) |
+| 直拍设备签名 | ✅ ECDSA 设备签名验真,防上传 AI 图冒充实拍 |
+| 内容审核后台 | ✅ 数据看板 / 内容审核(下架·恢复) / 用户封禁 |
+| 短信验证码 + 多国区号 | ✅ provider 抽象(mock/阿里云/Twilio),20 国区号 |
+| 真实视频 | ✅ 上传 / Range 流式 / 抖音式自动播放 |
+| 第三方密钥对接(活体/短信) | ⚠️ 接入点与请求契约已就绪,填密钥即用 |
+| iOS 上架签名打包 | ⬜ 需你的 Mac + Apple 开发者账号 |
+
+> 移动端 Flutter:注册区号/短信、实时私信已同步;端到端加密与相机直拍的客户端 UI 为第二期(需 `flutter pub get` 接入 `web_socket_channel`、相机/加密库)。Web 端三项均已完成。
 
 详见各子目录 README。

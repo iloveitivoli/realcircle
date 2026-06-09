@@ -60,7 +60,18 @@ export FACETEC_API_URL=...  FACETEC_API_KEY=...
 - ✅ 存储:data.json → PostgreSQL(可插拔驱动,已落地)
 - ✅ 活体:模拟流程 → 金融级 SDK 接入点(FaceTec/iProov provider,已落地)
 - ✅ 消息:轮询 → WebSocket 实时推送(已落地)
-- ⬜ 消息端到端加密(Signal 协议)
-- ⬜ 直拍:App 内相机 + 设备签名(C2PA 思路),Web 端 getUserMedia 直拍
-- ⬜ AI 内容检测多模型管线 + 人工审核后台
+- ✅ 端到端加密私信:ECDH P-256 + AES-GCM,服务器零知识(已落地)
+- ✅ 直拍:getUserMedia 相机实时拍摄 + ECDSA 设备签名验真(已落地)
+- ✅ 内容审核后台:数据看板 / 内容审核 / 用户封禁(已落地)
+- ✅ 短信验证码:provider 抽象(mock/阿里云/Twilio)+ 多国区号(已落地)
+- ⬜ AI 内容检测升级为多模型管线(当前为文本启发式)
 - ⬜ iOS 上架签名打包(需 Mac + Apple 开发者账号)
+
+## 新增环境变量速查
+
+```bash
+SMS_PROVIDER=mock|aliyun|twilio   SMS_REQUIRED=true     # 短信验证码
+LIVENESS_PROVIDER=mock|facetec|iproov                   # 活体
+STORAGE=json|postgres   DATABASE_URL=postgres://...     # 存储
+```
+端到端加密、直拍设备签名为客户端密钥机制,无需服务端配置。
