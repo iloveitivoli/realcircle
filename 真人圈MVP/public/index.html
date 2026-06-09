@@ -141,7 +141,8 @@ const I18N = {
     mago:' 分钟前', hago:' 小时前', dago:' 天前', meetc:' 次', admin:'🛡️ 审核后台',
     storyAdd:'发故事', mystory:'我的', congrats:'恭喜!你现在是 L2 认证真人', welcome:'欢迎回来,',
     addMedia:'图片/视频', uploading:'上传中', removeMedia:'移除', noVideoYet:'还没有真人视频,去发一条直拍吧', tapUnmute:'点击取消静音',
-    getCode:'获取验证码', codeSent:'验证码已发送', codePlaceholder:'短信验证码' },
+    getCode:'获取验证码', codeSent:'验证码已发送', codePlaceholder:'短信验证码',
+    cantDecrypt:'无法解密(密钥不在此设备)', encMsg:'[加密消息]', e2eOn:'🔒 端到端加密' },
   en: { dir:'ltr', appsub:'No AI girls. No bots. Only real humans.',
     login:'Log in', register:'Sign up', phone:'Phone number', pwd:'Password (min 6)', nick:'Nickname',
     have:'Have an account? Log in', toReg:'Sign up (next: liveness check)',
@@ -166,7 +167,8 @@ const I18N = {
     mago:'m ago', hago:'h ago', dago:'d ago', meetc:' times', admin:'🛡️ Moderation',
     storyAdd:'Add story', mystory:'You', congrats:'You are now an L2 verified human!', welcome:'Welcome back, ',
     addMedia:'Photo/Video', uploading:'Uploading', removeMedia:'Remove', noVideoYet:'No real videos yet — post your first', tapUnmute:'Tap to unmute',
-    getCode:'Get code', codeSent:'Code sent', codePlaceholder:'SMS code' },
+    getCode:'Get code', codeSent:'Code sent', codePlaceholder:'SMS code',
+    cantDecrypt:"Can't decrypt (key not on this device)", encMsg:'[Encrypted]', e2eOn:'🔒 End-to-end encrypted' },
   ar: { dir:'rtl', appsub:'لا فتيات ذكاء اصطناعي. لا روبوتات. بشر حقيقيون فقط.',
     login:'تسجيل الدخول', register:'إنشاء حساب', phone:'رقم الجوال', pwd:'كلمة المرور (6 على الأقل)', nick:'الاسم',
     have:'لديك حساب؟ سجّل الدخول', toReg:'إنشاء حساب (التالي: فحص الحيوية)',
@@ -191,7 +193,8 @@ const I18N = {
     mago:' د', hago:' س', dago:' ي', meetc:' مرات', admin:'🛡️ الإشراف',
     storyAdd:'قصة', mystory:'أنت', congrats:'أنت الآن إنسان موثّق L2!', welcome:'مرحباً بعودتك، ',
     addMedia:'صورة/فيديو', uploading:'جارٍ الرفع', removeMedia:'إزالة', noVideoYet:'لا فيديوهات بعد — انشر أول مقطع', tapUnmute:'اضغط لتشغيل الصوت',
-    getCode:'إرسال الرمز', codeSent:'تم إرسال الرمز', codePlaceholder:'رمز التحقق' },
+    getCode:'إرسال الرمز', codeSent:'تم إرسال الرمز', codePlaceholder:'رمز التحقق',
+    cantDecrypt:'تعذّر فك التشفير', encMsg:'[رسالة مشفّرة]', e2eOn:'🔒 تشفير من طرف إلى طرف' },
 };
 let lang = localStorage.getItem('lang') || 'zh';
 function t(k){ return (I18N[lang] && I18N[lang][k]) || I18N.zh[k] || k; }
@@ -246,6 +249,7 @@ async function boot(){
   catch{ token=''; localStorage.removeItem('token'); return renderAuth(); }
   refreshUnread();
   connectWS();
+  e2eEnsure();
   render();
 }
 async function refreshUnread(){ try{ const r=await api('GET','/api/notifications'); unread=r.unread; }catch{} }
@@ -263,6 +267,51 @@ function connectWS(){
   sock.onclose=()=>{ if(ws===sock) ws=null; if(token){ wsRetry=Math.min(wsRetry+1,6); setTimeout(connectWS, 800*wsRetry); } };
 }
 function disconnectWS(){ const w=ws; ws=null; if(w){ try{ w.onclose=null; w.close(); }catch{} } }
+
+/* ==================== 端到端加密(ECDH P-256 + AES-GCM,私钥仅存本机) ==================== */
+let _e2ePriv=null, _chatPub=null; const _e2eShareCache={};
+const _b64=b=>btoa(String.fromCharCode(...new Uint8Array(b)));
+const _unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function e2eEnsure(){
+  if(!token || !(crypto&&crypto.subtle)) return;
+  let priv=localStorage.getItem('e2e_priv'), pub=localStorage.getItem('e2e_pub');
+  if(!priv){
+    try{
+      const kp=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveKey']);
+      pub=JSON.stringify(await crypto.subtle.exportKey('jwk',kp.publicKey));
+      priv=JSON.stringify(await crypto.subtle.exportKey('jwk',kp.privateKey));
+      localStorage.setItem('e2e_priv',priv); localStorage.setItem('e2e_pub',pub);
+      await api('POST','/api/me/pubkey',{pubKey:pub});
+    }catch{ return; }
+  } else if(pub && me && !me.pubKey){ try{ await api('POST','/api/me/pubkey',{pubKey:pub}); }catch{} }
+  try{ _e2ePriv=await crypto.subtle.importKey('jwk',JSON.parse(priv),{name:'ECDH',namedCurve:'P-256'},false,['deriveKey']); }catch{ _e2ePriv=null; }
+}
+async function e2eKey(otherPub){
+  if(!otherPub) return null;
+  if(!_e2ePriv) await e2eEnsure();
+  if(!_e2ePriv) return null;
+  if(_e2eShareCache[otherPub]) return _e2eShareCache[otherPub];
+  try{
+    const op=await crypto.subtle.importKey('jwk',JSON.parse(otherPub),{name:'ECDH',namedCurve:'P-256'},false,[]);
+    const k=await crypto.subtle.deriveKey({name:'ECDH',public:op},_e2ePriv,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+    _e2eShareCache[otherPub]=k; return k;
+  }catch{ return null; }
+}
+async function e2eEnc(otherPub,plain){
+  const k=await e2eKey(otherPub); if(!k) return null;
+  try{ const iv=crypto.getRandomValues(new Uint8Array(12));
+    const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},k,new TextEncoder().encode(plain));
+    return 'e1:'+_b64(iv)+'.'+_b64(ct);
+  }catch{ return null; }
+}
+async function e2eDec(otherPub,payload){
+  if(typeof payload!=='string'||!payload.startsWith('e1:')) return null;
+  const k=await e2eKey(otherPub); if(!k) return null;
+  try{ const p=payload.slice(3).split('.');
+    const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:_unb64(p[0])},k,_unb64(p[1]));
+    return new TextDecoder().decode(pt);
+  }catch{ return null; }
+}
 function handleWS(d){
   if(d.type==='message'){
     // 正在与对端聊天 → 实时刷新气泡;否则在会话列表则刷新列表
@@ -330,13 +379,13 @@ async function sendCode(){
 async function doRegister(){
   const dial=$('#dial').value; localStorage.setItem('dial',dial);
   try{ const r=await api('POST','/api/register',{dial,phone:$('#phone').value,password:$('#pwd').value,nickname:$('#nick').value,code:$('#code').value});
-    token=r.token; me=r.user; localStorage.setItem('token',token); connectWS(); go('verify'); }
+    token=r.token; me=r.user; localStorage.setItem('token',token); connectWS(); e2eEnsure(); go('verify'); }
   catch(e){ toast(errMsg(e)); }
 }
 async function doLogin(){
   const dial=$('#dial').value; localStorage.setItem('dial',dial);
   try{ const r=await api('POST','/api/login',{dial,phone:$('#phone').value,password:$('#pwd').value});
-    token=r.token; me=r.user; localStorage.setItem('token',token); await refreshUnread(); connectWS(); go(me.level>=2?'feed':'verify'); }
+    token=r.token; me=r.user; localStorage.setItem('token',token); await refreshUnread(); connectWS(); e2eEnsure(); go(me.level>=2?'feed':'verify'); }
   catch(e){ toast(errMsg(e)); }
 }
 
@@ -534,23 +583,44 @@ async function createEvent(btn){ try{ await api('POST','/api/events',{title:$('#
 async function renderChats(){
   $('#view').innerHTML = shell(`<div class="banner">${esc(t('encrypted'))} · 🛡️ AI 代聊防护已开启</div><div id="clist"><div class="spin"></div></div>`);
   try{ const {conversations}=await api('GET','/api/conversations'); const el=$('#clist'); if(!el)return;
-    el.innerHTML = conversations.length?conversations.map(c=>`<div class="card row" style="cursor:pointer" onclick="go('chat','${c.user.id}')">${ava(c.user,44)}
-      <div class="col" style="flex:1;min-width:0;"><div class="name">${esc(c.user.nickname)} ${badge(c.user.level)}</div><div class="muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(c.last)}</div></div>
-      <span class="muted">${ago(c.ts)}</span></div>`).join(''):`<div class="banner">${esc(t('noConv'))}</div>`;
+    if(!conversations.length){ el.innerHTML=`<div class="banner">${esc(t('noConv'))}</div>`; return; }
+    const cards = await Promise.all(conversations.map(async c=>{
+      let last=c.last;
+      if(c.lastEnc){ const d=await e2eDec(c.user.pubKey, c.last); last = d!=null? d : t('encMsg'); }
+      return `<div class="card row" style="cursor:pointer" onclick="go('chat','${c.user.id}')">${ava(c.user,44)}
+      <div class="col" style="flex:1;min-width:0;"><div class="name">${esc(c.user.nickname)} ${badge(c.user.level)}</div><div class="muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(last)}</div></div>
+      <span class="muted">${ago(c.ts)}</span></div>`;
+    }));
+    el.innerHTML = cards.join('');
   }catch(e){ $('#clist').innerHTML=`<div class="banner warn">${esc(errMsg(e))}</div>`; }
+}
+async function e2eRenderMsgs(messages, mid){
+  const rows = await Promise.all(messages.map(async m=>{
+    let txt = m.text;
+    if(m.enc){ const d=await e2eDec(_chatPub, m.text); txt = d!=null? d : '🔒 '+t('cantDecrypt'); }
+    return `<div class="msgrow ${m.from===mid?'me':''}"><div class="bubble">${esc(txt)}</div></div>`;
+  }));
+  return rows.join('');
 }
 async function renderChat(){
   let other; try{ other=(await api('GET','/api/users/'+chatWith)).user; }catch{ other={nickname:'?',level:1}; }
-  $('#view').innerHTML = `<div class="topbar"><button class="row" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--ink)" onclick="go('chat')">${I18N[lang].dir==='rtl'?'›':'‹'} ${esc(other.nickname)} ${badge(other.level)}</button><span class="cam">🔒</span></div>
+  _chatPub = other.pubKey || null;
+  $('#view').innerHTML = `<div class="topbar"><button class="row" style="background:none;border:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--ink)" onclick="go('chat')">${I18N[lang].dir==='rtl'?'›':'‹'} ${esc(other.nickname)} ${badge(other.level)}</button><span class="cam">${_chatPub?'🔒 E2E':'🔒'}</span></div>
     <div class="content" id="msgs"><div class="spin"></div></div>
     <div class="chatbar"><input id="cinput" placeholder="${esc(t('sayhi'))}" onkeydown="if(event.key==='Enter')sendMsg()"><button onclick="sendMsg()">${esc(t('send'))}</button></div>`;
   const refresh=async()=>{ try{ const {messages,me:mid}=await api('GET','/api/messages?with='+chatWith); const box=$('#msgs'); if(!box)return;
-    box.innerHTML = messages.length?messages.map(m=>`<div class="msgrow ${m.from===mid?'me':''}"><div class="bubble">${esc(m.text)}</div></div>`).join(''):`<div class="banner">${esc(t('hello'))}</div>`;
+    box.innerHTML = messages.length? await e2eRenderMsgs(messages,mid) : `<div class="banner">${esc(t('hello'))}</div>`;
     box.scrollTop=box.scrollHeight; }catch{} };
   chatRefresh=refresh;                          // WS 收到消息时即时刷新
   await refresh(); pollTimer=setInterval(refresh,2500); // 轮询作为 WS 不可用时的降级兜底
 }
-async function sendMsg(){ const inp=$('#cinput'); if(!inp.value.trim())return; try{ await api('POST','/api/messages',{to:chatWith,text:inp.value}); inp.value=''; const {messages,me:mid}=await api('GET','/api/messages?with='+chatWith); const box=$('#msgs'); box.innerHTML=messages.map(m=>`<div class="msgrow ${m.from===mid?'me':''}"><div class="bubble">${esc(m.text)}</div></div>`).join(''); box.scrollTop=box.scrollHeight; }catch(e){ toast(errMsg(e)); } }
+async function sendMsg(){
+  const inp=$('#cinput'); const plain=inp.value; if(!plain.trim())return;
+  let text=plain, enc=false;
+  if(_chatPub){ const c=await e2eEnc(_chatPub, plain); if(c){ text=c; enc=true; } } // 对方有公钥则端到端加密
+  try{ await api('POST','/api/messages',{to:chatWith,text,enc}); inp.value=''; if(chatRefresh) await chatRefresh(); }
+  catch(e){ toast(errMsg(e)); }
+}
 
 /* ==================== me / profile ==================== */
 async function renderMe(){ await renderProfileBody(me.id, true); }

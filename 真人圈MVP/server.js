@@ -193,6 +193,7 @@ function pubUser(u, viewer) {
     followers: DB.users.filter(x => (x.following || []).includes(u.id)).length,
     following: (u.following || []).length,
     isFollowing: viewer ? (viewer.following || []).includes(u.id) : false,
+    pubKey: u.pubKey || null, // E2E 公钥(端到端加密私信用)
   };
 }
 const LEVEL_NAMES = { 1: 'L1 基础', 2: 'L2 活体', 3: 'L3 实名', 4: 'L4 面验' };
@@ -279,6 +280,13 @@ const routes = {
     if (nickname !== undefined) { if (!nickname.trim() || nickname.length > 20) return err(res, 400, '昵称不合法'); u.nickname = nickname.trim(); }
     if (bio !== undefined) { if (bio.length > 200) return err(res, 400, '简介过长'); u.bio = bio; }
     store.save(); json(res, 200, { user: pubUser(u, u) });
+  },
+  /* ---- E2E:上传本人公钥(端到端加密私信) ---- */
+  'POST /api/me/pubkey': async (req, res) => {
+    const u = authUser(req); if (!u) return err(res, 401, '请先登录');
+    const { pubKey } = await readBody(req);
+    if (typeof pubKey !== 'string' || pubKey.length > 2000) return err(res, 400, '公钥不合法');
+    u.pubKey = pubKey; store.save(); json(res, 200, { ok: true });
   },
 
   /* ---- 活体验证(provider 抽象;mock/facetec/iproov,见 liveness.js,仅存特征哈希) ---- */
@@ -439,7 +447,7 @@ const routes = {
       const other = m.from === u.id ? m.to : m.from;
       if (!convs[other] || convs[other].ts <= m.ts) convs[other] = m;
     }
-    const list = Object.entries(convs).map(([oid, m]) => ({ user: pubUser(U(oid), u), last: m.text, ts: m.ts }))
+    const list = Object.entries(convs).map(([oid, m]) => ({ user: pubUser(U(oid), u), last: m.text, lastEnc: !!m.enc, ts: m.ts }))
       .sort((a, b) => b.ts - a.ts);
     json(res, 200, { conversations: list });
   },
@@ -454,10 +462,11 @@ const routes = {
     const u = authUser(req); if (!u) return err(res, 401, '请先登录');
     if (u.level < 2) return err(res, 403, '聊天需要 L2 活体验证');
     if (!rateLimit('msg:' + u.id, true)) return err(res, 429, '发送过于频繁');
-    const { to, text } = await readBody(req);
+    const { to, text, enc } = await readBody(req);
     if (!U(to)) return err(res, 404, '用户不存在');
-    if (!text || !text.trim()) return err(res, 400, '消息不能为空');
-    const m = { id: store.nid(), from: u.id, to, text: text.trim().slice(0, 2000), ts: Date.now() };
+    if (!text || !String(text).trim()) return err(res, 400, '消息不能为空');
+    // enc=true 时 text 为端到端密文,服务器原样存储转发,不解密、不审查长度按密文放宽
+    const m = { id: store.nid(), from: u.id, to, text: enc ? String(text).slice(0, 8000) : text.trim().slice(0, 2000), enc: !!enc, ts: Date.now() };
     DB.messages.push(m); notify(to, 'message', u.id, {}); store.save();
     // 实时推送给接收方 + 发送方其它在线设备(客户端按消息 id 去重)
     if (hub) { const evt = { type: 'message', message: m }; hub.toUser(to, evt); hub.toUser(u.id, evt); }
