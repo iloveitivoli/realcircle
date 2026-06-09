@@ -6,7 +6,7 @@ WORKDIR /app
 # 预装纯 JS 的 pg(仅在 STORAGE=postgres 时被 lazy require,JSON 模式不加载)。
 COPY package.json ./
 RUN npm install pg@^8.11.0 --omit=dev --no-save --no-package-lock && npm cache clean --force
-COPY server.js storage.js liveness.js ws.js ./
+COPY server.js storage.js liveness.js ws.js sms.js ./
 COPY public ./public
 
 ENV NODE_ENV=production

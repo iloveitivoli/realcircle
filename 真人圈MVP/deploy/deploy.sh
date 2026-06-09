@@ -41,10 +41,10 @@ fi
 # ---- 1. 打包代码(排除依赖与运行时数据) ----
 echo "▶ 打包代码…"
 TGZ="$(mktemp -t realcircle.XXXXXX).tgz"
-tar -C "$HERE" \
+COPYFILE_DISABLE=1 tar -C "$HERE" \
   --exclude=node_modules --exclude=data.json --exclude='*.tmp' \
   --exclude=.test-data.json --exclude='public/uploads' \
-  -czf "$TGZ" server.js storage.js liveness.js ws.js package.json public deploy 2>/dev/null
+  -czf "$TGZ" server.js storage.js liveness.js ws.js sms.js package.json public deploy 2>/dev/null
 echo "  → $(du -h "$TGZ" | cut -f1)"
 
 # ---- 2. 上传 ----
@@ -60,11 +60,14 @@ PORT="${RC_PORT:-3000}"
 cd /opt/realcircle
 tar xzf app.tgz && rm -f app.tgz
 
-# Node 20
-if ! command -v node >/dev/null 2>&1; then
-  echo "  安装 Node 20…"
+# Node 18+(系统自带旧版 node 时强制升级到 20)
+NODE_MAJOR=$(node -v 2>/dev/null | sed -n 's/^v\([0-9]*\).*/\1/p')
+if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 18 ]; then
+  echo "  安装 Node 20(当前: ${NODE_MAJOR:-无})…"
+  dnf module reset -y nodejs >/dev/null 2>&1 || true
+  dnf module disable -y nodejs >/dev/null 2>&1 || true
   curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - >/dev/null 2>&1
-  dnf install -y nodejs >/dev/null 2>&1
+  dnf install -y nodejs --allowerasing >/dev/null 2>&1
 fi
 echo "  node $(node --version)"
 
@@ -98,6 +101,21 @@ if ! command -v nginx >/dev/null 2>&1; then
   echo "  安装 nginx…"
   dnf install -y nginx >/dev/null 2>&1
 fi
+# 用极简 nginx.conf,彻底避免发行版默认 server 与我们的 default_server 在 80 端口冲突
+cat >/etc/nginx/nginx.conf <<'NGINX'
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /run/nginx.pid;
+events { worker_connections 1024; }
+http {
+  include /etc/nginx/mime.types;
+  default_type application/octet-stream;
+  sendfile on;
+  keepalive_timeout 65;
+  include /etc/nginx/conf.d/*.conf;
+}
+NGINX
 cat >/etc/nginx/conf.d/realcircle.conf <<NGINX
 server {
   listen 80 default_server;
@@ -115,10 +133,8 @@ server {
   }
 }
 NGINX
-# 移除发行版默认 server 块,避免与 default_server 冲突
-sed -i '/server {/,/^    }/d' /etc/nginx/nginx.conf 2>/dev/null || true
-nginx -t >/dev/null 2>&1 && systemctl enable --now nginx >/dev/null 2>&1 && systemctl restart nginx
 setsebool -P httpd_can_network_connect 1 2>/dev/null || true   # SELinux 放行反代
+if nginx -t; then systemctl enable nginx >/dev/null 2>&1; systemctl restart nginx; else echo "  ⚠ nginx 配置测试失败(见上)"; fi
 
 # 防火墙放行 80
 if systemctl is-active firewalld >/dev/null 2>&1; then
@@ -126,10 +142,19 @@ if systemctl is-active firewalld >/dev/null 2>&1; then
   firewall-cmd --reload >/dev/null 2>&1 || true
 fi
 
-sleep 1
-echo "  健康检查:"; curl -fsS "http://127.0.0.1:${PORT}/api/health" || echo "  (本地探活失败,看 journalctl -u realcircle)"
-echo ""
-echo "  服务状态:"; systemctl is-active realcircle nginx
+echo "  等待服务就绪…"
+OK=""
+for i in 1 2 3 4 5 6; do
+  if curl -fsS "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then OK=1; break; fi
+  sleep 2
+done
+echo "  服务状态: realcircle=$(systemctl is-active realcircle) nginx=$(systemctl is-active nginx)"
+if [ -n "$OK" ]; then
+  echo "  应用健康检查: $(curl -fsS http://127.0.0.1:${PORT}/api/health)"
+else
+  echo "  ⚠ 应用未就绪,realcircle 最近日志:"; journalctl -u realcircle -n 25 --no-pager 2>/dev/null
+fi
+echo "  外网入口(nginx 80): $(curl -fsS -o /dev/null -w 'HTTP %{http_code}' http://127.0.0.1/ 2>/dev/null || echo '无响应')"
 REMOTE
 
 rm -f "$TGZ"
